@@ -92,6 +92,8 @@ jobs:
       shell: msys2 {0}
       run: |
         export PATH="/mingw64/bin:$PATH"
+        # Override MINGW64_PATH to point to current MSYS2 installation
+        export MINGW64_PATH=/mingw64
         make clean
         make windows-dist
 
