@@ -41,56 +41,9 @@ jobs:
         docker --version
         docker info
 
-    - name: Create Dockerfile for deb build
+    - name: Verify Dockerfile exists
       run: |
-        mkdir -p .docker
-        cat > .docker/Dockerfile.deb << 'EOF'
-        FROM ubuntu:22.04
-
-        # Install build dependencies
-        RUN apt-get update && apt-get install -y \
-            build-essential \
-            libdwarf-dev \
-            libelf-dev \
-            pkg-config \
-            devscripts \
-            debhelper \
-            && rm -rf /var/lib/apt/lists/*
-
-        WORKDIR /src
-        COPY . .
-
-        # Build the project
-        RUN make clean && make
-
-        # Create debian package structure
-        RUN mkdir -p /output && \
-            mkdir -p debian-pkg/DEBIAN && \
-            mkdir -p debian-pkg/usr/bin && \
-            mkdir -p debian-pkg/usr/share/doc/elftk
-
-        # Copy binary
-        RUN cp build/bin/elftk debian-pkg/usr/bin/
-
-        # Create control file
-        RUN cat > debian-pkg/DEBIAN/control << 'CONTROL'
-        Package: elftk
-        Version: 1.0.0
-        Section: utils
-        Priority: optional
-        Architecture: amd64
-        Depends: libdwarf1, libelf1
-        Maintainer: ELF Toolkit <noreply@example.com>
-        Description: ELF analysis and debugging toolkit
-         A comprehensive toolkit for analyzing ELF files, extracting debug information,
-         and working with DWARF debugging data.
-        CONTROL
-
-        # Create package
-        RUN dpkg-deb --build debian-pkg /output/elftk_1.0.0_amd64.deb
-
-        CMD ["echo", "Package built successfully"]
-        EOF
+        ls -la .docker/Dockerfile.deb
 
     - name: Build deb package
       run: |
