@@ -1,0 +1,212 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libdwarf-dev libelf-dev pkg-config
+
+    - name: Check Docker
+      run: |
+        docker --version
+        docker info
+
+    - name: Create Dockerfile for deb build
+      run: |
+        mkdir -p .docker
+        cat > .docker/Dockerfile.deb << 'EOF'
+        FROM ubuntu:22.04
+
+        # Install build dependencies
+        RUN apt-get update && apt-get install -y \
+            build-essential \
+            libdwarf-dev \
+            libelf-dev \
+            pkg-config \
+            devscripts \
+            debhelper \
+            && rm -rf /var/lib/apt/lists/*
+
+        WORKDIR /src
+        COPY . .
+
+        # Build the project
+        RUN make clean && make
+
+        # Create debian package structure
+        RUN mkdir -p /output && \
+            mkdir -p debian-pkg/DEBIAN && \
+            mkdir -p debian-pkg/usr/bin && \
+            mkdir -p debian-pkg/usr/share/doc/elftk
+
+        # Copy binary
+        RUN cp build/bin/elftk debian-pkg/usr/bin/
+
+        # Create control file
+        RUN cat > debian-pkg/DEBIAN/control << 'CONTROL'
+        Package: elftk
+        Version: 1.0.0
+        Section: utils
+        Priority: optional
+        Architecture: amd64
+        Depends: libdwarf1, libelf1
+        Maintainer: ELF Toolkit <noreply@example.com>
+        Description: ELF analysis and debugging toolkit
+         A comprehensive toolkit for analyzing ELF files, extracting debug information,
+         and working with DWARF debugging data.
+        CONTROL
+
+        # Create package
+        RUN dpkg-deb --build debian-pkg /output/elftk_1.0.0_amd64.deb
+
+        CMD ["echo", "Package built successfully"]
+        EOF
+
+    - name: Build deb package
+      run: |
+        docker build -f .docker/Dockerfile.deb -t elftk-deb-builder .
+        docker run --name temp-deb-builder elftk-deb-builder
+        mkdir -p build/dist
+        docker cp temp-deb-builder:/output/elftk_1.0.0_amd64.deb ./build/dist/
+        docker rm temp-deb-builder
+
+    - name: Upload Linux artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-deb
+        path: build/dist/elftk_1.0.0_amd64.deb
+
+  build-windows:
+    runs-on: windows-latest
+    needs: build-linux
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-make
+          mingw-w64-x86_64-libdwarf
+          mingw-w64-x86_64-pkg-config
+          make
+          zip
+
+    - name: Build Windows executable
+      shell: msys2 {0}
+      run: |
+        export PATH="/mingw64/bin:$PATH"
+        make clean
+        make windows-dist
+
+    - name: Upload Windows artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-zip
+        path: build/dist/elftk-windows-portable.zip
+
+  build-macos:
+    runs-on: macos-latest
+    needs: build-linux
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        brew install libdwarf pkg-config
+
+    - name: Build macOS executable
+      run: |
+        make clean
+        make macos-dist
+
+    - name: Create macOS zip
+      run: |
+        cd dist
+        zip -r ../build/dist/elftk-macos-portable.zip ELFSymbolReader-macOS/
+        mkdir -p ../build/dist
+        mv ../build/dist/elftk-macos-portable.zip ../build/dist/ || true
+        # Create the dist directory if it doesn't exist and move the zip
+        mkdir -p ../build/dist
+        cd ELFSymbolReader-macOS
+        zip -r ../../build/dist/elftk-macos-portable.zip .
+
+    - name: Upload macOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-zip
+        path: build/dist/elftk-macos-portable.zip
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.build-linux.outputs.version }}
+        name: Release ${{ needs.build-linux.outputs.version }}
+        draft: false
+        prerelease: false
+        files: |
+          linux-deb/elftk_1.0.0_amd64.deb
+          windows-zip/elftk-windows-portable.zip
+          macos-zip/elftk-macos-portable.zip
+        body: |
+          ## ELF Toolkit Release ${{ needs.build-linux.outputs.version }}
+
+          ### Downloads
+
+          - **Linux (Ubuntu/Debian)**: `elftk_1.0.0_amd64.deb`
+            - Install with: `sudo dpkg -i elftk_1.0.0_amd64.deb`
+
+          - **Windows**: `elftk-windows-portable.zip`
+            - Extract and run `elftk.exe` directly
+
+          - **macOS**: `elftk-macos-portable.zip`
+            - Extract and run from terminal
+
+          ### Changes
+
+          - Cross-platform ELF analysis toolkit
+          - Support for DWARF debugging information
+          - Command-line interface for ELF file inspection
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
