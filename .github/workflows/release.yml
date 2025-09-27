@@ -82,6 +82,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -112,7 +121,7 @@ jobs:
       shell: msys2 {0}
       run: |
         cd dist-windows
-        VERSION="${{ needs.build-linux.outputs.version }}"
+        VERSION="${{ steps.get_version.outputs.version }}"
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           zip -r ../elftk-win.zip .
         else
@@ -139,6 +148,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
     - name: Install dependencies
       run: |
         brew install libdwarf pkg-config
@@ -155,7 +173,7 @@ jobs:
     - name: Create macOS zip
       run: |
         cd dist-macos
-        VERSION="${{ needs.build-linux.outputs.version }}"
+        VERSION="${{ steps.get_version.outputs.version }}"
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           zip -r ../elftk-mac.zip .
         else
