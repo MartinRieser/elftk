@@ -55,12 +55,26 @@ jobs:
         mkdir -p build/dist
         docker cp temp-deb-builder:/output/elftk_1.0.0_amd64.deb ./build/dist/
         docker rm temp-deb-builder
+        # Rename with version support
+        VERSION="${{ steps.get_version.outputs.version }}"
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          mv ./build/dist/elftk_1.0.0_amd64.deb ./elftk-linux.deb
+        else
+          mv ./build/dist/elftk_1.0.0_amd64.deb ./elftk-linux-${VERSION}.deb
+        fi
+
+    - name: Test Linux build
+      run: |
+        # Extract and test the deb package
+        sudo dpkg -i elftk-linux*.deb
+        elftk --help
+        echo "✅ Linux build test passed"
 
     - name: Upload Linux artifacts
       uses: actions/upload-artifact@v4
       with:
         name: linux-deb
-        path: build/dist/elftk_1.0.0_amd64.deb
+        path: elftk-linux*.deb
 
   build-windows:
     runs-on: windows-latest
@@ -88,13 +102,36 @@ jobs:
         # Override MINGW64_PATH to point to current MSYS2 installation
         export MINGW64_PATH=/mingw64
         make clean
-        make windows-dist
+        make windows
+        # Create proper Windows distribution
+        mkdir -p dist-windows
+        cp build/bin/* dist-windows/
+        cp README.md LICENSE dist-windows/
+
+    - name: Create Windows zip
+      shell: msys2 {0}
+      run: |
+        cd dist-windows
+        VERSION="${{ needs.build-linux.outputs.version }}"
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          zip -r ../elftk-win.zip .
+        else
+          zip -r ../elftk-win-${VERSION}.zip .
+        fi
+
+    - name: Test Windows build
+      shell: msys2 {0}
+      run: |
+        # Test the built executable
+        cd dist-windows
+        ./elftk.exe --help
+        echo "✅ Windows build test passed"
 
     - name: Upload Windows artifacts
       uses: actions/upload-artifact@v4
       with:
         name: windows-zip
-        path: build/dist/elftk-windows-portable.zip
+        path: elftk-win*.zip
 
   build-macos:
     runs-on: macos-latest
@@ -109,19 +146,34 @@ jobs:
     - name: Build macOS executable
       run: |
         make clean
-        make macos-dist
+        make macos
+        # Create proper macOS distribution
+        mkdir -p dist-macos
+        cp build/bin/* dist-macos/
+        cp README.md LICENSE dist-macos/
 
     - name: Create macOS zip
       run: |
-        mkdir -p build/dist
-        cd dist/ELFSymbolReader-macOS
-        zip -r ../../build/dist/elftk-macos-portable.zip .
+        cd dist-macos
+        VERSION="${{ needs.build-linux.outputs.version }}"
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          zip -r ../elftk-mac.zip .
+        else
+          zip -r ../elftk-mac-${VERSION}.zip .
+        fi
+
+    - name: Test macOS build
+      run: |
+        # Test the built executable
+        cd dist-macos
+        ./elftk --help
+        echo "✅ macOS build test passed"
 
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
       with:
         name: macos-zip
-        path: build/dist/elftk-macos-portable.zip
+        path: elftk-mac*.zip
 
   create-release:
     runs-on: ubuntu-latest
@@ -139,21 +191,21 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          linux-deb/elftk_1.0.0_amd64.deb
-          windows-zip/elftk-windows-portable.zip
-          macos-zip/elftk-macos-portable.zip
+          linux-deb/elftk-linux*.deb
+          windows-zip/elftk-win*.zip
+          macos-zip/elftk-mac*.zip
         body: |
           ## ELF Toolkit Release ${{ needs.build-linux.outputs.version }}
 
           ### Downloads
 
-          - **Linux (Ubuntu/Debian)**: `elftk_1.0.0_amd64.deb`
-            - Install with: `sudo dpkg -i elftk_1.0.0_amd64.deb`
+          - **Linux (Ubuntu/Debian)**: `elftk-linux*.deb`
+            - Install with: `sudo dpkg -i elftk-linux*.deb`
 
-          - **Windows**: `elftk-windows-portable.zip`
+          - **Windows**: `elftk-win*.zip`
             - Extract and run `elftk.exe` directly
 
-          - **macOS**: `elftk-macos-portable.zip`
+          - **macOS**: `elftk-mac*.zip`
             - Extract and run from terminal
 
           ### Changes
