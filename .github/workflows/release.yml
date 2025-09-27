@@ -75,6 +75,7 @@ jobs:
           mingw-w64-x86_64-make
           mingw-w64-x86_64-libdwarf
           mingw-w64-x86_64-pkg-config
+          mingw-w64-x86_64-dwarfutils
           make
           zip
 
@@ -93,7 +94,7 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
-    needs: build-linux
+    needs: build-windows
     steps:
     - uses: actions/checkout@v4
 
@@ -108,13 +109,8 @@ jobs:
 
     - name: Create macOS zip
       run: |
-        cd dist
-        zip -r ../build/dist/elftk-macos-portable.zip ELFSymbolReader-macOS/
-        mkdir -p ../build/dist
-        mv ../build/dist/elftk-macos-portable.zip ../build/dist/ || true
-        # Create the dist directory if it doesn't exist and move the zip
-        mkdir -p ../build/dist
-        cd ELFSymbolReader-macOS
+        mkdir -p build/dist
+        cd dist/ELFSymbolReader-macOS
         zip -r ../../build/dist/elftk-macos-portable.zip .
 
     - name: Upload macOS artifacts
