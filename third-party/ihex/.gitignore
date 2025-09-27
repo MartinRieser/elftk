@@ -1,0 +1,11 @@
+*.o
+*.a
+bin2ihex
+ihex2bin
+split*bit
+merge*bit
+*.hex
+*.bin
+xcuserdata
+*.xcodeproj/*.xcworkspace
+build/
