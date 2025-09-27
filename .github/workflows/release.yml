@@ -78,16 +78,6 @@ jobs:
           make
           zip
 
-    - name: Debug header files
-      shell: msys2 {0}
-      run: |
-        echo "=== Checking libdwarf installation ==="
-        pacman -Ql mingw-w64-x86_64-libdwarf | grep -E '\.(h)$'
-        echo "=== Checking include directories ==="
-        find /mingw64/include -name "*dwarf*" -type f 2>/dev/null || true
-        ls -la /mingw64/include/libdwarf-2/ 2>/dev/null || true
-        ls -la /mingw64/include/ | grep dwarf || true
-
     - name: Build Windows executable
       shell: msys2 {0}
       run: |
