@@ -16,21 +16,19 @@ elftk automatically discovers and displays:
 
 **No configuration needed** - just point it at any ARM ELF binary compiled with debug info (`-g` flag).
 
-## ? Performance
+## Performance
 
 **35-40x faster than GDB** for symbol extraction with **5x more comprehensive output**:
 
 | Tool | Speed | Coverage | Best For |
 |------|-------|----------|----------|
-| **elftk** | ?? **Ultra Fast** | ?? **Comprehensive** | Static analysis, automation, CI/CD |
-| GDB | ?? Standard | ?? Function-focused | Interactive debugging |
+| **elftk** | **Ultra Fast** | **Comprehensive** | Static analysis, automation, CI/CD |
+| GDB | Standard | Function-focused | Interactive debugging |
 
 - **Lightning fast**: Processes hundreds of symbols in milliseconds
 - **Structured output**: CSV/JSON ready for automation and toolchains
 - **Complete analysis**: Variables, constants, struct members, and functions
 - **Perfect for**: Firmware analysis, reverse engineering, automated workflows
-
-*Benchmark your own binaries - see [Performance Testing](#performance-testing) below.*
 
 ## Quick Example
 
@@ -69,9 +67,7 @@ PI_CONSTANT,0x20000076,4,float,3.141593f
 }
 ```
 
-## ?? Usage
-
-elftk provides **clear, helpful command-line interface** with automatic validation:
+## Usage
 
 ```bash
 # Get help with all options and examples
@@ -128,8 +124,6 @@ Before building, ensure you have:
    .\build\bin\elftk.exe your_firmware.elf
    ```
 
-
-
 ### macOS
 
 **Prerequisites:**
@@ -163,8 +157,7 @@ Before building, ensure you have:
    make macos-dist
    # Creates dist/elftk-macOS/ - copy this folder to any macOS system
    ```
-
-
+   
 ### Linux (Ubuntu/Debian)
 
 1. **Install development dependencies:**
@@ -178,6 +171,7 @@ Before building, ensure you have:
    - `git` - version control system for cloning the repository
    - `libdwarf-dev` - DWARF debug information library
    - `libelf-dev` - ELF format handling library
+     
 2. **Build and run:**
    ```bash
    git clone <repository-url>
@@ -186,9 +180,5 @@ Before building, ensure you have:
    ./build/bin/elftk your_firmware.elf
    ```
 
-
-
-
 ## License
-
 Mozilla Public License 2.0 (MPL-2.0) - Free for both personal and commercial use.
