@@ -2,6 +2,16 @@
 
 This directory contains third-party libraries used by ELFtk.
 
+## CLI11 - Command Line Parser
+
+**Source:** https://github.com/CLIUtils/CLI11
+**Author:** Henry Schreiner (University of Cincinnati)
+**Version:** 2.5.0
+**License:** 3-Clause BSD License (see license header in CLI11.hpp)
+**Purpose:** Modern command-line parsing library
+
+CLI11 is a command line parser for C++11 and beyond that provides a rich feature set with a simple and intuitive interface. This is a single-header version included for convenience.
+
 ## Intel HEX Library (ihex)
 
 **Source:** https://github.com/arkku/ihex
@@ -22,8 +32,9 @@ Small library for reading the Motorola S-Record (or SREC) format, mainly intende
 
 ## License Compliance
 
-Both libraries are licensed under the MIT License, which is compatible with the Mozilla Public License 2.0 used by ELFtk. The original license files are preserved in their respective subdirectories:
+All libraries are licensed under permissive open source licenses (3-Clause BSD and MIT) which are compatible with the Mozilla Public License 2.0 used by ELFtk:
 
+- `CLI11/CLI11.hpp` - 3-Clause BSD License (header-only library)
 - `ihex/LICENSE` - MIT License for Intel HEX library
 - `srec/LICENSE` - MIT License for Motorola S-Record library
 

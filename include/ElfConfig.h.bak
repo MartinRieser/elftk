@@ -54,6 +54,7 @@ struct Config {
 
     // Local Variable Analysis Options
     bool showLocalVariables = false;       ///< Enable local variable analysis and display
+    bool showStackLayout = false;          ///< Show function stack frame layout
 
     // Memory Layout Options
     bool extractInterruptVectors = false;  ///< Extract and display interrupt vector table

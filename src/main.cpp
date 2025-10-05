@@ -1,16 +1,16 @@
 /**
  * @file main.cpp
- * @brief Streamlined command-line interface for elftk (ELF file tool kit for embedded software development)
+ * @brief Modern command-line interface for elftk using CLI11 library
  *
- * This file provides a clean, maintainable entry point that delegates
- * complex operations to specialized components. The main function focuses
- * solely on coordination between parsing, validation, and analysis.
+ * This file provides a clean, maintainable entry point using the robust
+ * CLI11 library for argument parsing. The main function focuses solely
+ * on analysis coordination with professional-grade CLI handling.
  *
  * @section architecture_improvements Architectural Improvements
- * - **CommandLineParser**: Type-safe argument parsing with validation
+ * - **CLI11Parser**: Modern CLI parsing with automatic help/error handling
  * - **ConfigValidator**: Comprehensive option conflict detection
- * - **VersionInfo**: Centralized version and help text management
- * - **Minimal main()**: Clean separation of concerns
+ * - **Automatic Features**: Help generation, error messages, validation
+ * - **Standards Compliance**: Professional CLI behavior and conventions
  *
  * @section usage_examples Usage Examples
  * @code
@@ -38,8 +38,7 @@
 
 #include "ElfReader.h"
 #include "ElfExceptions.h"
-#include "cli/CommandLineParser.h"
-#include "cli/VersionInfo.h"
+#include "cli/CLI11Parser.h"
 #include "cli/ConfigValidator.h"
 #include <iostream>
 #include <stdexcept>
@@ -47,12 +46,11 @@
 
 
 /**
- * @brief Streamlined main entry point for ELF Symbol Reader
+ * @brief Modern main entry point using CLI11 library
  *
- * This function provides a clean, maintainable entry point that delegates
- * complex operations to specialized components:
- * - CommandLineParser: Handles all argument parsing and validation
- * - VersionInfo: Manages version and help text display
+ * This function provides a clean, maintainable entry point using the
+ * industry-standard CLI11 library for robust argument parsing:
+ * - CLI11Parser: Professional CLI parsing with automatic help/error handling
  * - ConfigValidator: Validates option combinations and conflicts
  * - ElfReader: Performs the actual ELF analysis
  *
@@ -60,54 +58,37 @@
  * @param argv Array of command-line argument strings
  * @return Exit status code (0 = success, 1 = error)
  *
- * @section improved_workflow Modern Workflow
- * 1. Parse arguments with type-safe CommandLineParser
- * 2. Handle help/version requests via VersionInfo
- * 3. Validate configuration with comprehensive checks
- * 4. Execute analysis with proper error handling
+ * @section modern_workflow CLI11-Based Workflow
+ * 1. Parse arguments with CLI11 (automatic help/version/error handling)
+ * 2. Validate configuration with comprehensive checks
+ * 3. Execute analysis with proper error handling
  *
  * @section benefits Architectural Benefits
- * - **Testable**: Each component can be unit tested independently
- * - **Maintainable**: Clear separation of concerns
- * - **Extensible**: Easy to add new options without code duplication
- * - **Robust**: Comprehensive validation and error handling
+ * - **Professional**: Industry-standard CLI behavior and error messages
+ * - **Automatic**: Help generation, validation, and error formatting
+ * - **Robust**: Handles all edge cases (invalid options, file checks, etc.)
+ * - **Maintainable**: Clean separation of concerns with minimal boilerplate
  */
 int main(int argc, char* argv[]) {
-    // Parse command-line arguments with comprehensive validation
-    auto parse_result = CommandLineParser::parse(argc, argv);
-
-    // Handle immediate exit requests (help, version, or errors)
-    if (parse_result.should_exit) {
-        if (parse_result.help_requested) {
-            VersionInfo::showHelp(argv[0]);
-        } else if (parse_result.version_requested) {
-            VersionInfo::showVersion();
-        }
-        return parse_result.exit_code;
-    }
-
-    // Handle parsing errors
-    if (!parse_result.error_message.empty()) {
-        std::cerr << parse_result.error_message << std::endl;
-        std::cerr << "Use --help for usage information." << std::endl;
-        return 1;
-    }
-
-    // Additional validation (redundant check, but provides detailed warnings)
-    auto validation_result = ConfigValidator::validate(parse_result.config);
-    if (!validation_result.is_valid) {
-        std::cerr << "Configuration error: " << validation_result.error_message << std::endl;
-        return 1;
-    }
-
-    // Display warnings if any (non-fatal issues)
-    for (const auto& warning : validation_result.warnings) {
-        std::cerr << "Warning: " << warning << std::endl;
-    }
-
-    // Execute ELF analysis with robust error handling
     try {
-        ElfReader elf_reader(parse_result.config);
+        // Parse command-line arguments using CLI11
+        // Note: CLI11 automatically handles help, version, errors, and exits appropriately
+        Config config = CLI11Parser::parse(argc, argv);
+
+        // Validate configuration for option conflicts
+        auto validation_result = ConfigValidator::validate(config);
+        if (!validation_result.is_valid) {
+            std::cerr << "Configuration error: " << validation_result.error_message << std::endl;
+            return 1;
+        }
+
+        // Display warnings if any (non-fatal issues)
+        for (const auto& warning : validation_result.warnings) {
+            std::cerr << "Warning: " << warning << std::endl;
+        }
+
+        // Execute ELF analysis with robust error handling
+        ElfReader elf_reader(config);
         elf_reader.analyzeMemberParameters();
 
     } catch (const ElfReaderExceptions::ElfParsingError& e) {

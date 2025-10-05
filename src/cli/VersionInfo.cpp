@@ -52,7 +52,6 @@ void VersionInfo::showOptionsHelp(const char* /* program_name */) {
     std::cout << "      --functions      Show functions only" << std::endl;
     std::cout << "      --variables      Show variables only" << std::endl;
     std::cout << "      --constants      Show constants only" << std::endl;
-    std::cout << "      --local-vars     Show local variables within functions" << std::endl;
     std::cout << "      --show-sections  Include section names in output" << std::endl;
     std::cout << std::endl;
 
@@ -62,8 +61,8 @@ void VersionInfo::showOptionsHelp(const char* /* program_name */) {
     std::cout << "      --interrupt-vectors Show interrupt vector table" << std::endl;
     std::cout << std::endl;
 
-    std::cout << "Binary Export:" << std::endl;
-    std::cout << "      --export=FORMAT  Export format: hex, s19, s28, s37, bin" << std::endl;
+    std::cout << "Firmware Export:" << std::endl;
+    std::cout << "      --export=FORMAT  Export firmware file (hex=Intel HEX, s19/s28/s37=Motorola S-record, bin=raw binary)" << std::endl;
     std::cout << std::endl;
 }
 
@@ -76,7 +75,7 @@ void VersionInfo::showExamples(const char* program_name) {
     std::cout << "  Show specific information:" << std::endl;
     std::cout << "    " << program_name << " --json --constants firmware.elf" << std::endl;
     std::cout << "    " << program_name << " --functions --verbose firmware.elf" << std::endl;
-    std::cout << "    " << program_name << " --local-vars --show-sections firmware.elf" << std::endl;
+    std::cout << "    " << program_name << " --show-sections firmware.elf" << std::endl;
     std::cout << std::endl;
 
     std::cout << "  Memory analysis:" << std::endl;
@@ -85,8 +84,8 @@ void VersionInfo::showExamples(const char* program_name) {
     std::cout << "    " << program_name << " --stack-layout --verbose firmware.elf" << std::endl;
     std::cout << std::endl;
 
-    std::cout << "  Binary export:" << std::endl;
-    std::cout << "    " << program_name << " --export=hex firmware.elf" << std::endl;
-    std::cout << "    " << program_name << " --export=s28 --verbose firmware.elf" << std::endl;
+    std::cout << "  Firmware export:" << std::endl;
+    std::cout << "    " << program_name << " --export=hex firmware.elf    # Creates firmware.hex" << std::endl;
+    std::cout << "    " << program_name << " --export=bin firmware.elf    # Creates firmware.bin" << std::endl;
     std::cout << std::endl;
 }

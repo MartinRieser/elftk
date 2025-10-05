@@ -741,6 +741,24 @@ std::string ElfReader::resolveDwarfType(Dwarf_Debug dbg, Dwarf_Die type_die) {
             }
             return "const_type";
         }
+        case DW_TAG_volatile_type: {
+            // Follow the DW_AT_type attribute to get the underlying type
+            Dwarf_Attribute attr;
+            if (dwarf_attr(type_die, DW_AT_type, &attr, &error) == DW_DLV_OK) {
+                Dwarf_Off type_offset;
+                if (dwarf_global_formref(attr, &type_offset, &error) == DW_DLV_OK) {
+                    Dwarf_Die underlying_type_die = nullptr;
+                    if (dwarf_offdie_b(dbg, type_offset, 1, &underlying_type_die, &error) == DW_DLV_OK) {
+                        std::string underlying_type = resolveDwarfType(dbg, underlying_type_die);
+                        dwarf_dealloc_die(underlying_type_die);
+                        dwarf_dealloc(dbg, attr, DW_DLA_ATTR);
+                        return underlying_type;
+                    }
+                }
+                dwarf_dealloc(dbg, attr, DW_DLA_ATTR);
+            }
+            return "volatile_type";
+        }
         case DW_TAG_structure_type:
         case DW_TAG_class_type: {
             std::string name = getDwarfDieName(dbg, type_die);
@@ -768,7 +786,7 @@ std::string ElfReader::resolveDwarfType(Dwarf_Debug dbg, Dwarf_Die type_die) {
     }
 }
 
-// Phase 2A.1: Enhanced type metadata extraction
+// Enhanced type metadata extraction
 ElfReader::TypeMetadata ElfReader::extractTypeMetadata(Dwarf_Debug dbg, Dwarf_Die type_die) {
     TypeMetadata metadata;
     if (type_die == nullptr) {
@@ -2253,18 +2271,29 @@ void ElfReader::analyzeMemberParameters() {
 
     if (config_.verbosity < 0) return;
 
-    // Stack Frame Analysis for Embedded Debugging (exclusive mode)
-    if (config_.showStackLayout) {
-        if (extractStackFrameAnalysis()) {
-            printStackFrameAnalysis();
+    // Interrupt Vector Table Analysis (exclusive mode)
+    if (config_.extractInterruptVectors) {
+        if (extractInterruptVectorTable()) {
+            printInterruptVectorTable();
         } else {
-            if (config_.verbosity >= 0) {
-                std::cout << "Stack frame analysis not available. Requires local variable analysis.\n";
+            if (config_.verbosity > 0) {
+                std::cout << "\nNo interrupt vector table found in this ELF file.\n";
             }
         }
-        return; // Exit early when stack-layout mode
+        return; // Exit early when interrupt-vectors mode
     }
 
+    // Memory Region Mapping and Validation (exclusive mode)
+    if (config_.extractMemoryRegions) {
+        if (extractMemoryRegionMapping()) {
+            printMemoryRegionMapping();
+        } else {
+            if (config_.verbosity > 0) {
+                std::cout << "\nNo memory region mapping available for this ELF file.\n";
+            }
+        }
+        return; // Exit early when memory-regions mode
+    }
 
     if (!config_.functionsOnly && !config_.variablesOnly) {
         
@@ -2708,31 +2737,8 @@ void ElfReader::analyzeMemberParameters() {
         std::cout << "  Average length: " << std::fixed << std::setprecision(1) << stats.average_length << " chars\n";
         std::cout << "  Load factor: " << std::fixed << std::setprecision(2) << stats.load_factor << "\n";
     }
-    
-    
-    // Phase 7.2: Interrupt Vector Table Analysis
-    if (config_.extractInterruptVectors) {
-        if (extractInterruptVectorTable()) {
-            printInterruptVectorTable();
-        } else {
-            if (config_.verbosity > 0) {
-                std::cout << "\nNo interrupt vector table found in this ELF file.\n";
-            }
-        }
-    }
-    
-    // Phase 7.2: Memory Region Mapping and Validation
-    if (config_.extractMemoryRegions) {
-        if (extractMemoryRegionMapping()) {
-            printMemoryRegionMapping();
-        } else {
-            if (config_.verbosity > 0) {
-                std::cout << "\nNo memory region mapping available for this ELF file.\n";
-            }
-        }
-    }
-    
-    // Phase 1: Binary Export Functionality
+
+    // Binary Export Functionality
     if (!config_.exportFormat.empty()) {
         if (config_.verbosity >= 0) {
             std::cout << "\nExporting binary data to " << config_.exportFormat << " format...\n";
@@ -2889,9 +2895,6 @@ void ElfReader::generateFunctionJsonOutput(const std::vector<FunctionInfo>& func
     std::cout << "}\n";
 }
 
-// ========================================================================
-// Phase 7.1B: DWARF 5 Advanced Type Resolution Implementation
-// ========================================================================
 
 void ElfReader::processDwarf5TypeQualifier(Dwarf_Debug dbg, Dwarf_Die die, 
                                           const std::string& /* namespace_prefix */, 
@@ -3060,9 +3063,6 @@ void ElfReader::processDwarfTemplateParameter(Dwarf_Debug dbg, Dwarf_Die die,
     }
 }
 
-// ========================================================================
-// Phase 7.1B: Type Resolution Optimization Implementation
-// ========================================================================
 
 AdvancedTypeInfo ElfReader::getCachedTypeInfo(const std::string& type_name) const {
     auto it = type_cache_.find(type_name);
@@ -3146,7 +3146,7 @@ void ElfReader::optimizeTypeDependencies() {
 
 void ElfReader::printTypeResolutionStats() const {
     if (config_.verbosity > 0) {
-        std::cout << "\n=== Phase 7.1B: Advanced Type Resolution Statistics ===\n";
+        std::cout << "\n=== Advanced Type Resolution Statistics ===\n";
         std::cout << "DWARF 5 advanced types: " << advanced_types_.size() << "\n";
         std::cout << "Type cache entries: " << type_cache_.size() << "\n";
         std::cout << "Template specializations: " << template_specializations_.size() << "\n";
@@ -3191,9 +3191,6 @@ void ElfReader::printTypeResolutionStats() const {
     }
 }
 
-// ========================================================================
-// Phase 7.2: Interrupt Vector Table Analysis Implementation
-// ========================================================================
 
 bool ElfReader::extractInterruptVectorTable() {
     try {
@@ -3331,23 +3328,10 @@ std::vector<FunctionInfo> ElfReader::identifyInterruptHandlers() const {
 }
 
 void ElfReader::printInterruptVectorTable() const {
-    std::cout << "\n=== Phase 7.2: Interrupt Vector Table Analysis ===\n";
-    std::cout << "Architecture: " << interrupt_vector_table_.architecture << "\n";
-    
-    if (interrupt_vector_table_.base_address != 0) {
-        std::cout << "Vector table base address: 0x" << std::hex << interrupt_vector_table_.base_address << std::dec << "\n";
-        std::cout << "Entry size: " << interrupt_vector_table_.entry_size << " bytes\n";
-        std::cout << "Total entries: " << interrupt_vector_table_.total_entries << "\n";
-    }
-    
-    std::cout << "Valid handlers found: " << interrupt_vector_table_.getValidHandlerCount() << "\n";
-    std::cout << "\n";
-    
     if (!interrupt_vector_table_.vectors.empty()) {
-        std::cout << "Interrupt Vectors:\n";
         std::cout << "Vector# | Handler Address | Function Name                | Description\n";
         std::cout << "--------|-----------------|------------------------------|---------------------------\n";
-        
+
         for (const auto& vector : interrupt_vector_table_.vectors) {
             if (vector.is_valid) {
                 printf("%-7u | 0x%08llx      | %-28s | %s\n",
@@ -3357,42 +3341,7 @@ void ElfReader::printInterruptVectorTable() const {
                        vector.description.c_str());
             }
         }
-        std::cout << "\n";
     }
-    
-    // Show additional interrupt handler functions not in vector table
-    std::vector<FunctionInfo> all_handlers = identifyInterruptHandlers();
-    std::vector<FunctionInfo> additional_handlers;
-    
-    for (const auto& handler : all_handlers) {
-        bool in_vector_table = false;
-        for (const auto& vector : interrupt_vector_table_.vectors) {
-            if (vector.handler_address == handler.start_address) {
-                in_vector_table = true;
-                break;
-            }
-        }
-        
-        if (!in_vector_table) {
-            additional_handlers.push_back(handler);
-        }
-    }
-    
-    if (!additional_handlers.empty()) {
-        std::cout << "Additional Interrupt Handler Functions (not in vector table):\n";
-        std::cout << "Function Name                        | Address    | Size\n";
-        std::cout << "-------------------------------------|------------|--------\n";
-        
-        for (const auto& handler : additional_handlers) {
-            printf("%-36s | 0x%08llx | %llu bytes\n",
-                   handler.name.c_str(),
-                   (unsigned long long)handler.start_address,
-                   (unsigned long long)(handler.end_address - handler.start_address));
-        }
-        std::cout << "\n";
-    }
-    
-    std::cout << "===============================================\n\n";
 }
 
 std::string ElfReader::getArmInterruptDescription(uint32_t vector_number) const {
@@ -3614,9 +3563,6 @@ bool ElfReader::readSectionData(size_t section_index, std::vector<uint8_t>& data
     }
 }
 
-//==============================================================================
-// Phase 7.2: Memory Region Mapping and Validation Implementation
-//==============================================================================
 
 bool ElfReader::extractMemoryRegionMapping() {
     try {
@@ -3681,21 +3627,21 @@ void ElfReader::printMemoryRegionMapping() const {
     std::cout << "Memory Region Mapping and Validation" << std::endl;
     std::cout << "==================================================================" << std::endl;
     std::cout << std::endl;
-    
+
     // Basic information
     std::cout << "Architecture: " << memory_region_map_.architecture << std::endl;
     std::cout << "Entry Point: 0x" << std::hex << memory_region_map_.entry_point << std::dec << std::endl;
     std::cout << "Total Regions: " << memory_region_map_.regions.size() << std::endl;
     std::cout << "Loadable Regions: " << memory_region_map_.getLoadableRegionCount() << std::endl;
     std::cout << std::endl;
-    
+
     // Memory layout characteristics
     const auto& layout = memory_region_map_.layout;
     std::cout << "Memory Layout Characteristics:" << std::endl;
     std::cout << "  Memory Model: " << (layout.memory_model.empty() ? "Standard" : layout.memory_model) << std::endl;
     std::cout << "  Position Independent: " << (layout.is_position_independent ? "Yes" : "No") << std::endl;
     std::cout << "  Physical Addresses: " << (layout.has_physical_addresses ? "Meaningful" : "Virtual only") << std::endl;
-    
+
     if (layout.code_base_address > 0) {
         std::cout << "  Code Base Address: 0x" << std::hex << layout.code_base_address << std::dec << std::endl;
     }
@@ -3703,90 +3649,153 @@ void ElfReader::printMemoryRegionMapping() const {
         std::cout << "  Data Base Address: 0x" << std::hex << layout.data_base_address << std::dec << std::endl;
     }
     std::cout << std::endl;
-    
-    // Memory usage summary
+
+    // Calculate Flash and RAM usage based on region classification
+    uint64_t flash_size = 0;
+    uint64_t ram_size = 0;
+
+    for (const auto& region : memory_region_map_.regions) {
+        if (!region.is_loadable) continue;
+
+        // Use the classified region type for accurate flash/RAM determination
+        if (region.region_type == MemoryRegionType::CODE ||
+            region.region_type == MemoryRegionType::RODATA) {
+            flash_size += region.memory_size;
+        } else if (region.region_type == MemoryRegionType::DATA ||
+                   region.region_type == MemoryRegionType::BSS) {
+            ram_size += region.memory_size;
+        }
+    }
+
+    // Memory usage summary with Flash/RAM breakdown
     std::cout << "Memory Usage Summary:" << std::endl;
-    std::cout << "  Total Virtual Size: " << formatMemorySize(memory_region_map_.total_virtual_size) << std::endl;
-    std::cout << "  Total Physical Size: " << formatMemorySize(memory_region_map_.total_physical_size) << std::endl;
+    std::cout << "  Flash (Code + RO Data): " << formatMemorySize(flash_size) << std::endl;
+    std::cout << "  RAM (Data + BSS):       " << formatMemorySize(ram_size) << std::endl;
+    std::cout << "  Total Memory:           " << formatMemorySize(flash_size + ram_size) << std::endl;
     std::cout << std::endl;
-    
-    // Detailed memory regions
+
+    // Detailed memory regions with region names
     std::cout << "Memory Regions:" << std::endl;
-    std::cout << "-------------------------------------------------------------------------------" << std::endl;
-    std::cout << "Type      Virtual Address    Size        Permissions  Description" << std::endl;
-    std::cout << "-------------------------------------------------------------------------------" << std::endl;
-    
+    std::cout << "=================================================================================" << std::endl;
+    std::cout << std::left << std::setw(12) << "Region"
+              << std::setw(10) << "Type"
+              << std::setw(18) << "Address"
+              << std::setw(12) << "Size"
+              << std::setw(13) << "Permissions"
+              << "Description" << std::endl;
+    std::cout << "=================================================================================" << std::endl;
+
     for (const auto& region : memory_region_map_.regions) {
         if (!region.is_loadable) continue; // Skip non-loadable regions in main display
-        
-        std::cout << std::left << std::setw(10) << getRegionTypeName(region.region_type)
+
+        std::string region_name = region.name.empty() ? getRegionTypeName(region.region_type) : region.name;
+
+        std::cout << std::left << std::setw(12) << region_name
+                 << std::setw(10) << getRegionTypeName(region.region_type)
                  << "0x" << std::hex << std::setw(16) << region.virtual_address << std::dec
                  << std::setw(12) << formatMemorySize(region.memory_size)
                  << std::setw(13) << region.getPermissionString()
                  << region.description << std::endl;
     }
+    std::cout << "=================================================================================" << std::endl;
     std::cout << std::endl;
-    
+
     // Non-loadable regions (if any)
     bool hasNonLoadable = false;
     for (const auto& region : memory_region_map_.regions) {
         if (!region.is_loadable) {
             if (!hasNonLoadable) {
                 std::cout << "Non-Loadable Regions:" << std::endl;
-                std::cout << "-------------------------------------------------------------------------------" << std::endl;
+                std::cout << "=================================================================================" << std::endl;
                 hasNonLoadable = true;
             }
-            std::cout << std::left << std::setw(10) << getRegionTypeName(region.region_type)
+            std::string region_name = region.name.empty() ? getRegionTypeName(region.region_type) : region.name;
+            std::cout << std::left << std::setw(12) << region_name
+                     << std::setw(10) << getRegionTypeName(region.region_type)
                      << "0x" << std::hex << std::setw(16) << region.virtual_address << std::dec
                      << std::setw(12) << formatMemorySize(region.memory_size)
                      << std::setw(13) << region.getPermissionString()
                      << region.description << std::endl;
         }
     }
-    if (hasNonLoadable) std::cout << std::endl;
-    
-    // Validation results
+    if (hasNonLoadable) {
+        std::cout << "=================================================================================" << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Validation results - only show if there are errors, or if verbose mode
     const auto& validation = memory_region_map_.validation;
-    std::cout << "Validation Results:" << std::endl;
-    std::cout << "  Layout Valid: " << (validation.layout_valid ? "✓ Yes" : "✗ No") << std::endl;
-    std::cout << "  No Overlaps: " << (validation.no_overlaps ? "✓ Yes" : "✗ No") << std::endl;
-    std::cout << "  Addresses Reasonable: " << (validation.addresses_reasonable ? "✓ Yes" : "✗ No") << std::endl;
-    std::cout << "  Sizes Reasonable: " << (validation.sizes_reasonable ? "✓ Yes" : "✗ No") << std::endl;
-    std::cout << "  Total Errors: " << validation.error_count << std::endl;
-    std::cout << "  Total Warnings: " << validation.warning_count << std::endl;
-    
-    // Show errors and warnings
-    if (!validation.global_errors.empty()) {
-        std::cout << std::endl << "Validation Errors:" << std::endl;
-        for (const auto& error : validation.global_errors) {
-            std::cout << "  ✗ " << error << std::endl;
+    bool has_errors = (validation.error_count > 0);
+    bool has_warnings = (validation.warning_count > 0);
+
+    // Show validation section if: errors exist OR verbose mode is enabled
+    if (has_errors || config_.verbosity > 0) {
+        std::cout << "Validation Results:" << std::endl;
+        std::cout << "-------------------" << std::endl;
+
+        if (config_.verbosity > 0) {
+            std::cout << "The validation checks ensure the ELF file's memory layout is consistent and" << std::endl;
+            std::cout << "reasonable for the target architecture." << std::endl;
+            std::cout << std::endl;
+            std::cout << "  Layout Valid:         " << (validation.layout_valid ? "[OK] Yes" : "[!!] No")
+                      << " - Memory regions are properly structured" << std::endl;
+            std::cout << "  No Overlaps:          " << (validation.no_overlaps ? "[OK] Yes" : "[!!] No")
+                      << " - No conflicting memory regions" << std::endl;
+            std::cout << "  Addresses Reasonable: " << (validation.addresses_reasonable ? "[OK] Yes" : "[!!] No")
+                      << " - Addresses match expected ranges" << std::endl;
+            std::cout << "  Sizes Reasonable:     " << (validation.sizes_reasonable ? "[OK] Yes" : "[!!] No")
+                      << " - Region sizes are within expected limits" << std::endl;
+            std::cout << std::endl;
         }
-    }
-    
-    if (!validation.global_warnings.empty()) {
-        std::cout << std::endl << "Validation Warnings:" << std::endl;
-        for (const auto& warning : validation.global_warnings) {
-            std::cout << "  ⚠ " << warning << std::endl;
+
+        std::cout << "  Total Errors:   " << validation.error_count << std::endl;
+        std::cout << "  Total Warnings: " << validation.warning_count << std::endl;
+
+        // Show errors (always show if they exist)
+        if (!validation.global_errors.empty()) {
+            std::cout << std::endl << "Validation Errors:" << std::endl;
+            for (const auto& error : validation.global_errors) {
+                std::cout << "  [!!] " << error << std::endl;
+            }
         }
-    }
-    
-    // Detailed region validation (if verbose)
-    if (config_.verbosity > 1) {
-        std::cout << std::endl << "Detailed Region Validation:" << std::endl;
-        for (size_t i = 0; i < memory_region_map_.regions.size(); ++i) {
-            const auto& region = memory_region_map_.regions[i];
-            if (!region.validation.errors.empty() || !region.validation.warnings.empty()) {
-                std::cout << "  Region " << i << " (" << getRegionTypeName(region.region_type) << "):" << std::endl;
-                for (const auto& error : region.validation.errors) {
-                    std::cout << "    ✗ " << error << std::endl;
+
+        // Show global warnings in verbose mode
+        if (!validation.global_warnings.empty() && config_.verbosity > 0) {
+            std::cout << std::endl << "Validation Warnings:" << std::endl;
+            for (const auto& warning : validation.global_warnings) {
+                std::cout << "  [!]  " << warning << std::endl;
+            }
+        }
+
+        // Show per-region warnings in verbose mode
+        if (has_warnings && config_.verbosity > 0) {
+            bool header_shown = false;
+            for (size_t i = 0; i < memory_region_map_.regions.size(); ++i) {
+                const auto& region = memory_region_map_.regions[i];
+                std::string region_name = region.name.empty() ? getRegionTypeName(region.region_type) : region.name;
+
+                if (!region.validation.warnings.empty()) {
+                    if (!header_shown && validation.global_warnings.empty()) {
+                        std::cout << std::endl << "Validation Warnings:" << std::endl;
+                        header_shown = true;
+                    }
+                    for (const auto& warning : region.validation.warnings) {
+                        std::cout << "  [!]  " << region_name << ": " << warning << std::endl;
+                    }
                 }
-                for (const auto& warning : region.validation.warnings) {
-                    std::cout << "    ⚠ " << warning << std::endl;
+
+                // Always show errors (if they exist)
+                if (!region.validation.errors.empty()) {
+                    for (const auto& error : region.validation.errors) {
+                        std::cout << "  [!!] " << region_name << ": " << error << std::endl;
+                    }
                 }
             }
         }
+
+        std::cout << std::endl;
     }
-    
+
     std::cout << std::endl;
 }
 
@@ -3933,11 +3942,31 @@ void ElfReader::classifyMemoryRegions() {
             classifyESP32MemoryRegion(region, readable, writable, executable);
         } else {
             // Generic classification for non-ESP32 architectures
+
+            // Check common embedded flash/RAM address ranges first
+            bool is_likely_flash = (region.virtual_address >= 0x08000000 && region.virtual_address < 0x10000000) || // STM32 flash
+                                  (region.virtual_address < 0x00100000);    // Some MCUs start at 0x0
+            bool is_likely_ram = (region.virtual_address >= 0x20000000 && region.virtual_address < 0x30000000) ||   // STM32 SRAM
+                                (region.virtual_address >= 0x10000000 && region.virtual_address < 0x20000000);      // Some MCU SRAM
+
             if (executable && readable && !writable) {
                 region.region_type = MemoryRegionType::CODE;
-                region.name = "CODE";
+                region.name = "FLASH";
+            } else if (executable && is_likely_flash) {
+                // RWX or RX in flash region - treat as code/flash
+                region.region_type = MemoryRegionType::CODE;
+                region.name = "FLASH";
             } else if (readable && writable && !executable) {
                 // Could be DATA or BSS - check if has file size
+                if (region.file_size > 0) {
+                    region.region_type = MemoryRegionType::DATA;
+                    region.name = "DATA";
+                } else {
+                    region.region_type = MemoryRegionType::BSS;
+                    region.name = "BSS";
+                }
+            } else if (is_likely_ram && writable) {
+                // Writable RAM region
                 if (region.file_size > 0) {
                     region.region_type = MemoryRegionType::DATA;
                     region.name = "DATA";
@@ -4307,510 +4336,6 @@ std::string ElfReader::formatMemorySize(uint64_t size) const {
     return oss.str();
 }
 
-//==============================================================================
-// Stack Frame Analysis Implementation (Embedded Debugging Support)
-//==============================================================================
-
-bool ElfReader::extractStackFrameAnalysis() {
-    if (config_.verbosity >= 1) {
-        std::cout << "Starting comprehensive stack frame analysis..." << std::endl;
-    }
-    
-    // Initialize stack frame analysis results
-    stack_frame_analysis_.function_frames.clear();
-    stack_frame_analysis_.address_to_function.clear();
-    stack_frame_analysis_.total_functions_analyzed = 0;
-    stack_frame_analysis_.functions_with_frame_pointer = 0;
-    stack_frame_analysis_.leaf_functions = 0;
-    stack_frame_analysis_.largest_frame_size = 0;
-    stack_frame_analysis_.largest_frame_function.clear();
-    
-    // Set architecture information
-    uint16_t machine_type = is_32bit_ ? ehdr32_.e_machine : ehdr64_.e_machine;
-    if (machine_type == static_cast<uint16_t>(ElfMachine::EM_ARM)) {
-        stack_frame_analysis_.target_architecture = "ARM";
-        stack_frame_analysis_.abi_name = "AAPCS";
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_AARCH64)) {
-        stack_frame_analysis_.target_architecture = "ARM64";
-        stack_frame_analysis_.abi_name = "AAPCS64";
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_RISCV)) {
-        stack_frame_analysis_.target_architecture = "RISC-V";
-        stack_frame_analysis_.abi_name = "RISC-V";
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_XTENSA)) {
-        stack_frame_analysis_.target_architecture = "Xtensa";
-        stack_frame_analysis_.abi_name = "Xtensa Call0";
-    } else {
-        stack_frame_analysis_.target_architecture = "Unknown";
-        stack_frame_analysis_.abi_name = "Unknown";
-    }
-    
-    // Check if local variable analysis has been performed
-    if (functions_.empty()) {
-        if (config_.verbosity >= 1) {
-            std::cout << "No local variable data available. Stack frame analysis requires local variable analysis." << std::endl;
-        }
-        return false;
-    }
-    
-    // Analyze stack frame for each function
-    for (const auto& function_pair : functions_) {
-        const FunctionInfo& function_info = function_pair.second;
-        
-        // Perform comprehensive stack frame analysis
-        StackFrameInfo frame_info = analyzeStackFrame(function_info);
-        
-        // Add to results
-        stack_frame_analysis_.addStackFrame(frame_info);
-        
-        if (config_.verbosity >= 2) {
-            std::cout << "Analyzed function: " << frame_info.getSummary() << std::endl;
-        }
-    }
-    
-    if (config_.verbosity >= 1) {
-        std::cout << "Stack frame analysis complete: " << stack_frame_analysis_.getStatisticsSummary() << std::endl;
-    }
-    
-    return stack_frame_analysis_.total_functions_analyzed > 0;
-}
-
-void ElfReader::printStackFrameAnalysis() const {
-    if (stack_frame_analysis_.total_functions_analyzed == 0) {
-        if (config_.verbosity >= 0) {
-            std::cout << "No stack frame analysis data available." << std::endl;
-        }
-        return;
-    }
-    
-    if (config_.format == "json") {
-        // JSON output for machine processing
-        std::cout << "{" << std::endl;
-        std::cout << "  \"stack_frame_analysis\": {" << std::endl;
-        std::cout << "    \"target_architecture\": \"" << stack_frame_analysis_.target_architecture << "\"," << std::endl;
-        std::cout << "    \"abi_name\": \"" << stack_frame_analysis_.abi_name << "\"," << std::endl;
-        std::cout << "    \"statistics\": {" << std::endl;
-        std::cout << "      \"total_functions_analyzed\": " << stack_frame_analysis_.total_functions_analyzed << "," << std::endl;
-        std::cout << "      \"functions_with_frame_pointer\": " << stack_frame_analysis_.functions_with_frame_pointer << "," << std::endl;
-        std::cout << "      \"leaf_functions\": " << stack_frame_analysis_.leaf_functions << "," << std::endl;
-        std::cout << "      \"largest_frame_size\": " << stack_frame_analysis_.largest_frame_size << "," << std::endl;
-        std::cout << "      \"largest_frame_function\": \"" << stack_frame_analysis_.largest_frame_function << "\"" << std::endl;
-        std::cout << "    }," << std::endl;
-        std::cout << "    \"functions\": [" << std::endl;
-        
-        bool first = true;
-        for (const auto& frame_pair : stack_frame_analysis_.function_frames) {
-            if (!first) std::cout << "," << std::endl;
-            std::cout << formatStackFrameForJson(frame_pair.second);
-            first = false;
-        }
-        
-        std::cout << std::endl << "    ]" << std::endl;
-        std::cout << "  }" << std::endl;
-        std::cout << "}" << std::endl;
-    } else {
-        // Text output for human reading
-        std::cout << "\n================================================================================" << std::endl;
-        std::cout << "STACK FRAME ANALYSIS - EMBEDDED DEBUGGING SUPPORT" << std::endl;
-        std::cout << "================================================================================" << std::endl;
-        std::cout << "Target Architecture: " << stack_frame_analysis_.target_architecture << std::endl;
-        std::cout << "ABI: " << stack_frame_analysis_.abi_name << std::endl;
-        std::cout << stack_frame_analysis_.getStatisticsSummary() << std::endl;
-        std::cout << "================================================================================" << std::endl;
-        
-        // Display each function's stack frame analysis
-        for (const auto& frame_pair : stack_frame_analysis_.function_frames) {
-            std::cout << formatStackFrameForText(frame_pair.second) << std::endl;
-        }
-    }
-}
-
-StackFrameInfo ElfReader::analyzeStackFrame(const FunctionInfo& function_info) {
-    StackFrameInfo frame_info;
-    
-    // Basic function information
-    frame_info.function_name = function_info.name;
-    frame_info.mangled_name = function_info.mangled_name;
-    frame_info.function_start_address = function_info.start_address;
-    frame_info.function_end_address = function_info.end_address;
-    
-    // Calculate frame size
-    frame_info.total_frame_size = calculateStackFrameSize(function_info);
-    
-    // Detect calling convention
-    frame_info.calling_convention = detectCallingConvention(function_info);
-    
-    // Analyze register usage
-    frame_info.register_usage = analyzeRegisterUsage(function_info);
-    
-    // Convert local variables to stack frame entries
-    for (const auto& local_var : function_info.local_variables) {
-        StackFrameEntry entry = convertToStackFrameEntry(local_var, function_info.start_address);
-        frame_info.stack_variables.push_back(entry);
-        
-        if (entry.is_parameter) {
-            frame_info.parameters.push_back(entry);
-        } else {
-            frame_info.local_variables.push_back(entry);
-        }
-    }
-    
-    // Calculate frame layout sizes
-    frame_info.parameter_area_size = 0;
-    frame_info.local_variables_size = 0;
-    frame_info.saved_registers_size = 16; // Typical for ARM (4 registers * 4 bytes)
-    
-    for (const auto& var : frame_info.stack_variables) {
-        if (var.is_parameter) {
-            frame_info.parameter_area_size += var.size_bytes;
-        } else {
-            frame_info.local_variables_size += var.size_bytes;
-        }
-    }
-    
-    // Detect function characteristics
-    frame_info.is_leaf_function = (function_info.end_address - function_info.start_address) < 64; // Heuristic
-    frame_info.has_exception_handling = false; // Would require more sophisticated DWARF analysis
-    
-    // Set frame pointer offset (architecture-dependent)
-    if (frame_info.register_usage.uses_frame_pointer) {
-        frame_info.frame_pointer_offset = -static_cast<int64_t>(frame_info.saved_registers_size);
-    } else {
-        frame_info.frame_pointer_offset = 0;
-    }
-    
-    return frame_info;
-}
-
-CallingConvention ElfReader::detectCallingConvention([[maybe_unused]] const FunctionInfo& function_info) {
-    CallingConvention convention;
-    
-    uint16_t machine_type = is_32bit_ ? ehdr32_.e_machine : ehdr64_.e_machine;
-    
-    if (machine_type == static_cast<uint16_t>(ElfMachine::EM_ARM)) {
-        convention.name = "AAPCS";
-        convention.architecture = "ARM";
-        convention.stack_alignment = 4;
-        convention.frame_alignment = 4;
-        convention.param_registers = {"r0", "r1", "r2", "r3"};
-        convention.return_registers = {"r0", "r1"};
-        convention.stack_grows_down = true;
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_AARCH64)) {
-        convention.name = "AAPCS64";
-        convention.architecture = "ARM64";
-        convention.stack_alignment = 8;
-        convention.frame_alignment = 8;
-        convention.param_registers = {"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"};
-        convention.return_registers = {"x0", "x1"};
-        convention.stack_grows_down = true;
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_RISCV)) {
-        convention.name = "RISC-V";
-        convention.architecture = "RISC-V";
-        convention.stack_alignment = is_32bit_ ? 4 : 8;
-        convention.frame_alignment = is_32bit_ ? 4 : 8;
-        if (is_32bit_) {
-            convention.param_registers = {"a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"};
-        } else {
-            convention.param_registers = {"a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"};
-        }
-        convention.return_registers = {"a0", "a1"};
-        convention.stack_grows_down = true;
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_XTENSA)) {
-        // Xtensa supports both Call0 and Windowed ABI - detect from DWARF or assume Call0 (ESP32 default)
-        bool is_windowed_abi = false; // TODO: Detect from ELF flags or DWARF info
-        
-        if (is_windowed_abi) {
-            convention.name = "Xtensa Windowed";
-            convention.architecture = "Xtensa";
-            convention.stack_alignment = 16;  // 16-byte aligned for windowed ABI
-            convention.frame_alignment = 16;
-            // In windowed ABI: args passed in a10-a15, rotated to a2-a7 after call
-            convention.param_registers = {"a2", "a3", "a4", "a5", "a6", "a7"};
-            convention.return_registers = {"a2", "a3", "a4", "a5"};
-            convention.stack_grows_down = true;
-        } else {
-            // Call0 ABI (ESP32 default)
-            convention.name = "Xtensa Call0";
-            convention.architecture = "Xtensa";
-            convention.stack_alignment = 4;
-            convention.frame_alignment = 4;
-            convention.param_registers = {"a2", "a3", "a4", "a5", "a6", "a7"};
-            convention.return_registers = {"a2", "a3", "a4", "a5"};
-            convention.stack_grows_down = true;
-        }
-    } else {
-        convention.name = "Unknown";
-        convention.architecture = "Unknown";
-        convention.stack_alignment = 4;
-        convention.frame_alignment = 4;
-        convention.stack_grows_down = true;
-    }
-    
-    return convention;
-}
-
-RegisterUsage ElfReader::analyzeRegisterUsage(const FunctionInfo& function_info) {
-    RegisterUsage usage;
-    
-    uint16_t machine_type = is_32bit_ ? ehdr32_.e_machine : ehdr64_.e_machine;
-    
-    // Set architecture-specific register information
-    if (machine_type == static_cast<uint16_t>(ElfMachine::EM_ARM)) {
-        usage.parameter_registers = {"r0", "r1", "r2", "r3"};
-        usage.return_registers = {"r0", "r1"};
-        usage.callee_saved = {"r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "lr"};
-        usage.caller_saved = {"r0", "r1", "r2", "r3", "r12"};
-        
-        // Detect frame pointer usage (r11/fp is commonly used)
-        usage.uses_frame_pointer = (function_info.stack_frame_size > 32); // Heuristic
-        
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_AARCH64)) {
-        usage.parameter_registers = {"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"};
-        usage.return_registers = {"x0", "x1"};
-        usage.callee_saved = {"x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30"};
-        usage.caller_saved = {"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "x18"};
-        
-        // ARM64 often uses x29 as frame pointer
-        usage.uses_frame_pointer = (function_info.stack_frame_size > 16);
-        
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_RISCV)) {
-        usage.parameter_registers = {"a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"};
-        usage.return_registers = {"a0", "a1"};
-        usage.callee_saved = {"s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11"};
-        usage.caller_saved = {"t0", "t1", "t2", "t3", "t4", "t5", "t6", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"};
-        
-        // RISC-V uses s0/fp as frame pointer
-        usage.uses_frame_pointer = (function_info.stack_frame_size > 16);
-        
-    } else if (machine_type == static_cast<uint16_t>(ElfMachine::EM_XTENSA)) {
-        // Enhanced Xtensa register usage with ABI detection
-        bool is_windowed_abi = false; // TODO: Detect from ELF flags or DWARF info
-        
-        if (is_windowed_abi) {
-            // Windowed ABI register usage
-            usage.parameter_registers = {"a2", "a3", "a4", "a5", "a6", "a7"}; // After rotation
-            usage.return_registers = {"a2", "a3", "a4", "a5"};
-            usage.callee_saved = {}; // Managed by register window mechanism
-            usage.caller_saved = {"a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11"};
-            usage.uses_frame_pointer = true; // a7 used as frame pointer
-            // Special registers: a0 = return address, a1 = stack pointer
-        } else {
-            // Call0 ABI register usage (ESP32 default)
-            usage.parameter_registers = {"a2", "a3", "a4", "a5", "a6", "a7"};
-            usage.return_registers = {"a2", "a3", "a4", "a5"};
-            // Call0 ABI: a12-a15 are callee-saved, a15 may be frame pointer
-            usage.callee_saved = {"a12", "a13", "a14", "a15"};
-            usage.caller_saved = {"a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11"};
-            usage.uses_frame_pointer = (function_info.stack_frame_size > 32); // a15 may be FP
-            // Special registers: a0 = return address, a1 = stack pointer
-        }
-    }
-    
-    // Analyze actual register usage from local variables
-    for (const auto& var : function_info.local_variables) {
-        if (var.location.type == LocationType::REGISTER) {
-            std::string reg_name = "r" + std::to_string(var.location.offset_or_register);
-            usage.used_registers.push_back(reg_name);
-        }
-    }
-    
-    // Check for variable arguments (simple heuristic)
-    usage.has_variable_args = (function_info.parameters.size() > 8); // More than typical register parameters
-    
-    return usage;
-}
-
-StackFrameEntry ElfReader::convertToStackFrameEntry(const LocalVariableInfo& local_var, [[maybe_unused]] uint64_t function_start_addr) {
-    StackFrameEntry entry;
-    
-    entry.name = local_var.name;
-    entry.type = local_var.type;
-    entry.is_parameter = local_var.is_parameter;
-    entry.parameter_index = local_var.parameter_index;
-    
-    // Convert location information
-    if (local_var.location.type == LocationType::STACK_OFFSET) {
-        entry.stack_offset = local_var.location.offset_or_register;
-        entry.location_description = "Stack offset " + std::to_string(entry.stack_offset);
-    } else if (local_var.location.type == LocationType::REGISTER) {
-        entry.stack_offset = 0; // Not on stack
-        entry.location_description = "Register r" + std::to_string(local_var.location.offset_or_register);
-    } else {
-        entry.stack_offset = 0;
-        entry.location_description = "Unknown location";
-    }
-    
-    // Set variable scope
-    entry.scope_start_pc = local_var.scope_start_pc;
-    entry.scope_end_pc = local_var.scope_end_pc;
-    
-    // Estimate size (basic type analysis)
-    if (local_var.type.find("char") != std::string::npos) {
-        entry.size_bytes = 1;
-    } else if (local_var.type.find("short") != std::string::npos) {
-        entry.size_bytes = 2;
-    } else if (local_var.type.find("int") != std::string::npos || local_var.type.find("float") != std::string::npos) {
-        entry.size_bytes = 4;
-    } else if (local_var.type.find("long") != std::string::npos || local_var.type.find("double") != std::string::npos) {
-        entry.size_bytes = is_32bit_ ? 4 : 8;
-    } else if (local_var.type.find("*") != std::string::npos) {
-        entry.size_bytes = is_32bit_ ? 4 : 8; // Pointer size
-    } else {
-        entry.size_bytes = 4; // Default assumption
-    }
-    
-    return entry;
-}
-
-uint32_t ElfReader::calculateStackFrameSize(const FunctionInfo& function_info) {
-    // Start with the explicitly calculated frame size if available
-    uint32_t frame_size = function_info.stack_frame_size;
-    
-    // If no explicit frame size, calculate from variables
-    if (frame_size == 0) {
-        uint32_t local_vars_size = 0;
-        uint32_t max_offset = 0;
-        
-        for (const auto& var : function_info.local_variables) {
-            if (var.location.type == LocationType::STACK_OFFSET && var.location.offset_or_register < 0) {
-                // Local variable on stack
-                uint32_t var_end = static_cast<uint32_t>(-var.location.offset_or_register);
-                if (var_end > max_offset) {
-                    max_offset = var_end;
-                }
-            }
-        }
-        
-        local_vars_size = max_offset;
-        
-        // Add saved registers (typical: LR + FP + some callee-saved)
-        uint32_t saved_regs_size = 16; // Conservative estimate
-        
-        frame_size = local_vars_size + saved_regs_size;
-        
-        // Apply alignment
-        uint16_t machine_type = is_32bit_ ? ehdr32_.e_machine : ehdr64_.e_machine;
-        uint32_t alignment = (machine_type == static_cast<uint16_t>(ElfMachine::EM_AARCH64)) ? 8 : 4;
-        frame_size = (frame_size + alignment - 1) & ~(alignment - 1);
-    }
-    
-    return frame_size;
-}
-
-std::string ElfReader::formatStackFrameForText(const StackFrameInfo& frame_info) const {
-    std::ostringstream oss;
-    
-    oss << "\n--------------------------------------------------------------------------------" << std::endl;
-    oss << "FUNCTION: " << frame_info.function_name;
-    if (!frame_info.mangled_name.empty() && frame_info.mangled_name != frame_info.function_name) {
-        oss << " [" << frame_info.mangled_name << "]";
-    }
-    oss << std::endl;
-    oss << "Address Range: 0x" << std::hex << frame_info.function_start_address
-        << " - 0x" << frame_info.function_end_address << std::dec << std::endl;
-    oss << "Stack Frame Size: " << frame_info.total_frame_size << " bytes" << std::endl;
-    oss << "Calling Convention: " << frame_info.calling_convention.name 
-        << " (" << frame_info.calling_convention.architecture << ")" << std::endl;
-    oss << "Uses Frame Pointer: " << (frame_info.usesFramePointer() ? "Yes" : "No") << std::endl;
-    oss << "Leaf Function: " << (frame_info.is_leaf_function ? "Yes" : "No") << std::endl;
-    oss << "Parameters: " << frame_info.getParameterCount() 
-        << ", Local Variables: " << frame_info.getLocalVariableCount() << std::endl;
-    
-    // Display stack layout
-    if (!frame_info.stack_variables.empty()) {
-        oss << "\nStack Layout:" << std::endl;
-        oss << "  Offset    Size  Type            Name" << std::endl;
-        oss << "  --------  ----  --------------  ----------------" << std::endl;
-        
-        // Sort variables by stack offset for better visualization
-        std::vector<StackFrameEntry> sorted_vars = frame_info.stack_variables;
-        std::sort(sorted_vars.begin(), sorted_vars.end(), 
-                 [](const StackFrameEntry& a, const StackFrameEntry& b) {
-                     return a.stack_offset > b.stack_offset; // Higher offsets first
-                 });
-        
-        for (const auto& var : sorted_vars) {
-            if (var.stack_offset != 0) { // Only show stack-based variables
-                oss << "  " << std::setw(8) << var.getLocationString()
-                    << "  " << std::setw(4) << var.size_bytes
-                    << "  " << std::setw(14) << var.type.substr(0, 14)
-                    << "  " << var.name;
-                if (var.is_parameter) {
-                    oss << " (param " << var.parameter_index << ")";
-                }
-                oss << std::endl;
-            }
-        }
-        
-        // Show register-based variables separately
-        bool has_register_vars = false;
-        for (const auto& var : frame_info.stack_variables) {
-            if (var.stack_offset == 0 && var.location_description.find("Register") != std::string::npos) {
-                if (!has_register_vars) {
-                    oss << "\nRegister Variables:" << std::endl;
-                    oss << "  Register  Size  Type            Name" << std::endl;
-                    oss << "  --------  ----  --------------  ----------------" << std::endl;
-                    has_register_vars = true;
-                }
-                oss << "  " << std::setw(8) << var.location_description.substr(9) // Remove "Register "
-                    << "  " << std::setw(4) << var.size_bytes
-                    << "  " << std::setw(14) << var.type.substr(0, 14)
-                    << "  " << var.name;
-                if (var.is_parameter) {
-                    oss << " (param " << var.parameter_index << ")";
-                }
-                oss << std::endl;
-            }
-        }
-    }
-    
-    oss << "--------------------------------------------------------------------------------";
-    
-    return oss.str();
-}
-
-std::string ElfReader::formatStackFrameForJson(const StackFrameInfo& frame_info) const {
-    std::ostringstream oss;
-    
-    oss << "      {" << std::endl;
-    oss << "        \"function_name\": \"" << frame_info.function_name << "\"," << std::endl;
-    oss << "        \"mangled_name\": \"" << frame_info.mangled_name << "\"," << std::endl;
-    oss << "        \"start_address\": \"0x" << std::hex << frame_info.function_start_address << "\"," << std::dec << std::endl;
-    oss << "        \"end_address\": \"0x" << std::hex << frame_info.function_end_address << "\"," << std::dec << std::endl;
-    oss << "        \"frame_size\": " << frame_info.total_frame_size << "," << std::endl;
-    oss << "        \"calling_convention\": {" << std::endl;
-    oss << "          \"name\": \"" << frame_info.calling_convention.name << "\"," << std::endl;
-    oss << "          \"architecture\": \"" << frame_info.calling_convention.architecture << "\"" << std::endl;
-    oss << "        }," << std::endl;
-    oss << "        \"uses_frame_pointer\": " << (frame_info.usesFramePointer() ? "true" : "false") << "," << std::endl;
-    oss << "        \"is_leaf_function\": " << (frame_info.is_leaf_function ? "true" : "false") << "," << std::endl;
-    oss << "        \"parameter_count\": " << frame_info.getParameterCount() << "," << std::endl;
-    oss << "        \"local_variable_count\": " << frame_info.getLocalVariableCount() << "," << std::endl;
-    oss << "        \"stack_variables\": [" << std::endl;
-    
-    bool first = true;
-    for (const auto& var : frame_info.stack_variables) {
-        if (!first) oss << "," << std::endl;
-        oss << "          {" << std::endl;
-        oss << "            \"name\": \"" << var.name << "\"," << std::endl;
-        oss << "            \"type\": \"" << var.type << "\"," << std::endl;
-        oss << "            \"stack_offset\": " << var.stack_offset << "," << std::endl;
-        oss << "            \"size_bytes\": " << var.size_bytes << "," << std::endl;
-        oss << "            \"is_parameter\": " << (var.is_parameter ? "true" : "false") << "," << std::endl;
-        oss << "            \"location_description\": \"" << var.location_description << "\"" << std::endl;
-        oss << "          }";
-        first = false;
-    }
-    
-    oss << std::endl << "        ]" << std::endl;
-    oss << "      }";
-    
-    return oss.str();
-}
-
-// ============================================================================
-// Phase 1: Binary Export Implementation
-// ============================================================================
-
 bool ElfReader::performBinaryExport() {
     try {
         // Create exporter for the specified format
@@ -5144,21 +4669,6 @@ std::vector<MemberInfo> ElfReader::getConstants() {
     }
 
     return constants;
-}
-
-std::vector<LocalVariableInfo> ElfReader::getLocalVariables(const std::string& function_name) {
-    ensureAnalysisCompleted();
-    std::vector<LocalVariableInfo> local_vars;
-
-    // Find the function in our DWARF functions map
-    auto it = functions_.find(function_name);
-    if (it != functions_.end()) {
-        const FunctionInfo& func_info = it->second;
-        // Return the local variables from the function info
-        local_vars = func_info.local_variables;
-    }
-
-    return local_vars;
 }
 
 std::string ElfReader::getArchitecture() const {

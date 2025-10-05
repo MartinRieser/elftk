@@ -165,10 +165,6 @@ struct Config {
     std::string exportFormat;                  ///< Export format ("hex", "s19", "s28", "s37", "bin")
     bool constantsOnly = false;                ///< Show only constants
 
-    // Local Variable Analysis Options
-    bool showLocalVariables = false;       ///< Enable local variable analysis and display
-    bool showStackLayout = false;          ///< Show function stack frame layout
-
     // Memory Layout Options
     bool extractInterruptVectors = false;  ///< Extract and display interrupt vector table
     bool extractMemoryRegions = false;     ///< Extract and display memory region mapping
@@ -406,24 +402,6 @@ public:
     std::vector<MemberInfo> getConstants();
 
     /**
-     * @brief Get local variables for a specific function
-     *
-     * Extracts local variables and parameters for the specified function.
-     *
-     * @param function_name Name of the function to analyze
-     * @return Vector of LocalVariableInfo structures for the function
-     * @example
-     * ```cpp
-     * ElfReader reader("firmware.elf");
-     * auto locals = reader.getLocalVariables("main");
-     * for (const auto& var : locals) {
-     *     std::cout << var.name << " (" << var.type << ")" << std::endl;
-     * }
-     * ```
-     */
-    std::vector<LocalVariableInfo> getLocalVariables(const std::string& function_name);
-
-    /**
      * @brief Get architecture information from the ELF binary
      *
      * Returns architecture details extracted from ELF header.
@@ -640,16 +618,6 @@ private:
      */
     InterruptVectorTable interrupt_vector_table_;
     MemoryRegionMap memory_region_map_;
-    
-    /**
-     * @brief Stack frame analysis results container
-     * 
-     * Contains comprehensive stack frame analysis data for all functions when
-     * --stack-layout or related CLI options are enabled. Provides detailed
-     * embedded debugging information including variable locations, calling
-     * conventions, and register usage patterns.
-     */
-    StackFrameAnalysisResults stack_frame_analysis_;
     
     // ========================================================================
     // DWARF Debug Information Structures
@@ -1739,53 +1707,6 @@ private:
     template<typename SymbolType>
     const std::vector<SymbolType>& getSymbols() const;
     
-    // ========================================================================
-    // Stack Frame Analysis Methods (Embedded Debugging Support)
-    // ========================================================================
-    
-    /**
-     * @brief Extract comprehensive stack frame analysis information
-     * 
-     * Performs complete stack frame analysis on all functions in the ELF file,
-     * extracting detailed information about variable locations, calling conventions,
-     * register usage, and embedded debugging support. This method is automatically
-     * called when --stack-layout or related CLI options are enabled.
-     * 
-     * The analysis includes:
-     * - Stack frame layout and variable mapping
-     * - Parameter passing analysis (registers vs stack)
-     * - Local variable locations and lifetimes
-     * - Calling convention detection and validation
-     * - Frame pointer usage analysis
-     * - Register allocation patterns
-     * 
-     * @return True if stack frame analysis was successful, false on error
-     * 
-     * @note This method populates stack_frame_analysis_ with comprehensive results
-     * @see printStackFrameAnalysis() for formatted output display
-     * @see StackFrameAnalysisResults for detailed data structure documentation
-     */
-    bool extractStackFrameAnalysis();
-    
-    /**
-     * @brief Display comprehensive stack frame analysis results
-     * 
-     * Outputs formatted stack frame analysis information to stdout, providing
-     * professional embedded debugging information including:
-     * - Function-by-function stack frame layouts
-     * - Variable location mappings (stack offsets, registers)
-     * - Calling convention summaries
-     * - Architecture-specific analysis statistics
-     * - Memory usage patterns and optimization opportunities
-     * 
-     * The output format adapts to the configured verbosity level and output format
-     * (text, JSON, CSV) specified in the configuration.
-     * 
-     * @note Only displays results if extractStackFrameAnalysis() was previously successful
-     * @see Config::showStackLayout for enabling stack layout display
-     * @see Config::format for controlling output format (text/json/csv)
-     */
-    void printStackFrameAnalysis() const;
 
     /**
      * @brief Display comprehensive performance optimization metrics
@@ -1803,91 +1724,4 @@ private:
     void printPerformanceMetrics() const;
 
 private:
-    
-    /**
-     * @brief Analyze stack frame layout for a specific function
-     * 
-     * Performs detailed analysis of a single function's stack frame, extracting:
-     * - Total frame size and memory layout
-     * - Variable locations and stack offsets
-     * - Parameter passing analysis (registers vs stack)
-     * - Local variable allocation patterns
-     * - Calling convention identification
-     * 
-     * @param function_info Function information from local variable analysis
-     * @return Complete StackFrameInfo structure with embedded debugging details
-     */
-    StackFrameInfo analyzeStackFrame(const FunctionInfo& function_info);
-    
-    /**
-     * @brief Detect calling convention for target architecture
-     * 
-     * Analyzes the target architecture and function characteristics to determine
-     * the calling convention in use (AAPCS, AAPCS64, RISC-V, etc.).
-     * 
-     * @param function_info Function to analyze for calling convention detection
-     * @return CallingConvention structure with architecture-specific details
-     */
-    CallingConvention detectCallingConvention([[maybe_unused]] const FunctionInfo& function_info);
-    
-    /**
-     * @brief Analyze register usage patterns for a function
-     * 
-     * Examines DWARF location expressions and function characteristics to
-     * determine register usage patterns, including:
-     * - Parameter passing registers
-     * - Return value registers  
-     * - Callee-saved vs caller-saved register usage
-     * - Frame pointer usage detection
-     * 
-     * @param function_info Function to analyze for register usage
-     * @return RegisterUsage structure with detailed register analysis
-     */
-    RegisterUsage analyzeRegisterUsage(const FunctionInfo& function_info);
-    
-    /**
-     * @brief Convert local variable to stack frame entry
-     * 
-     * Transforms LocalVariableInfo from DWARF analysis into StackFrameEntry
-     * with enhanced embedded debugging information and precise location mapping.
-     * 
-     * @param local_var Local variable information from DWARF analysis
-     * @param function_start_addr Function start address for scope calculation
-     * @return StackFrameEntry with embedded debugging enhancements
-     */
-    StackFrameEntry convertToStackFrameEntry(const LocalVariableInfo& local_var, 
-                                            [[maybe_unused]] uint64_t function_start_addr);
-    
-    /**
-     * @brief Calculate total stack frame size for a function
-     * 
-     * Analyzes all local variables, parameters, and saved registers to
-     * calculate the total stack frame size with proper alignment considerations.
-     * 
-     * @param function_info Function to calculate frame size for
-     * @return Total frame size in bytes with architecture-appropriate alignment
-     */
-    uint32_t calculateStackFrameSize(const FunctionInfo& function_info);
-    
-    /**
-     * @brief Format stack frame analysis for text output
-     * 
-     * Creates human-readable formatted output for stack frame analysis results
-     * suitable for embedded debugging and development workflows.
-     * 
-     * @param frame_info Stack frame information to format
-     * @return Formatted string with comprehensive stack frame details
-     */
-    std::string formatStackFrameForText(const StackFrameInfo& frame_info) const;
-    
-    /**
-     * @brief Format stack frame analysis for JSON output
-     * 
-     * Creates machine-readable JSON output for stack frame analysis results
-     * suitable for integration with automated tools and IDEs.
-     * 
-     * @param frame_info Stack frame information to format
-     * @return JSON-formatted string with complete stack frame data
-     */
-    std::string formatStackFrameForJson(const StackFrameInfo& frame_info) const;
 };

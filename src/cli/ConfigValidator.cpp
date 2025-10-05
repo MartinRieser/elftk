@@ -134,21 +134,8 @@ bool ConfigValidator::validateInputFile(const std::string& filepath, std::string
 
 bool ConfigValidator::checkLogicalConsistency(const Config& config, std::vector<std::string>& warnings) {
     // Check for potentially inefficient combinations
-    if (config.verbosity == 0 && config.showLocalVariables) {
-        warnings.push_back("--local-vars is more useful with --verbose for detailed output");
-    }
-
-    if (config.format == "csv" && config.showStackLayout) {
-        warnings.push_back("Stack layout analysis may be better viewed with --json format for structured data");
-    }
-
     if (config.extractMemoryRegions && config.extractInterruptVectors) {
         warnings.push_back("Both --memory-regions and --interrupt-vectors specified. Output may be verbose.");
-    }
-
-    // Check for missing useful combinations
-    if (config.showLocalVariables && !config.functionsOnly) {
-        warnings.push_back("--local-vars shows local variables within functions. Consider using --functions for focus.");
     }
 
     if (!config.exportFormat.empty() && config.verbosity > 0) {

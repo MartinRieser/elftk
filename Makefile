@@ -130,9 +130,10 @@ BINDIR = $(BUILDDIR)/bin
 THIRDPARTY_DIR = third-party
 IHEX_DIR = $(THIRDPARTY_DIR)/ihex
 SREC_DIR = $(THIRDPARTY_DIR)/srec
+CLI11_DIR = $(THIRDPARTY_DIR)/CLI11
 
 # Add third-party include paths
-INCLUDES += -I$(IHEX_DIR) -I$(SREC_DIR)
+INCLUDES += -I$(IHEX_DIR) -I$(SREC_DIR) -I$(CLI11_DIR)
 
 # Files
 SOURCES = $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/cli/*.cpp)
