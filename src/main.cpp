@@ -36,14 +36,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ElfReader.h"
-#include "ElfExceptions.h"
-#include "cli/CLI11Parser.h"
-#include "cli/ConfigValidator.h"
 #include <iostream>
 #include <stdexcept>
-
-
+#include "ElfExceptions.h"
+#include "ElfReader.h"
+#include "ElfSymbolExtractor.h"
+#include "cli/CLI11Parser.h"
+#include "cli/ConfigValidator.h"
 
 /**
  * @brief Modern main entry point using CLI11 library
@@ -72,33 +71,70 @@
 int main(int argc, char* argv[]) {
     try {
         // Parse command-line arguments using CLI11
-        // Note: CLI11 automatically handles help, version, errors, and exits appropriately
-        Config config = CLI11Parser::parse(argc, argv);
+        // Note: CLI11 automatically handles help, version, errors, and returns appropriate codes
+        auto config_result = CLI11Parser::parse(argc, argv);
+        if (!config_result) {
+            // CLI11 already printed the error/help message
+            return 1;
+        }
+        Config config = *config_result;
 
         // Validate configuration for option conflicts
-        auto validation_result = ConfigValidator::validate(config);
-        if (!validation_result.is_valid) {
-            std::cerr << "Configuration error: " << validation_result.error_message << std::endl;
+        auto validationResult = ConfigValidator::validate(config);
+        if (!validationResult.is_valid) {
+            std::cerr << "Configuration error: " << validationResult.error_message << '\n';
             return 1;
         }
 
         // Display warnings if any (non-fatal issues)
-        for (const auto& warning : validation_result.warnings) {
-            std::cerr << "Warning: " << warning << std::endl;
+        for (const auto& warning : validationResult.warnings) {
+            std::cerr << "Warning: " << warning << '\n';
         }
 
-        // Execute ELF analysis with robust error handling
-        ElfReader elf_reader(config);
-        elf_reader.analyzeMemberParameters();
+        // Phase 1 & 2 Enhancement: Extract additional symbols from ELF symbol table and sections
+        if (!config.functionsOnly && config.enableElfSymbolExtraction) {
+            auto extractedSymbols = ElfSymbolExtractor::extractSymbols(config.inputFile);
+            auto variables = ElfSymbolExtractor::getVariables(extractedSymbols);
+            auto linkerSymbols = ElfSymbolExtractor::getLinkerSymbols(extractedSymbols);
+
+            // Phase 2: Extract section information and discover additional variables
+            auto sections = ElfSymbolExtractor::extractSections(config.inputFile);
+            auto memoryLayout = ElfSymbolExtractor::getMemoryLayout(config.inputFile);
+            auto discoveredVars =
+                ElfSymbolExtractor::discoverSectionVariables(sections, extractedSymbols);
+
+            // Phase 3: Detect array bounds and enhance symbols with element count
+            auto enhancedSymbols =
+                ElfSymbolExtractor::detectArrayBounds(extractedSymbols, sections);
+
+            // Phase 3: Extract cross-reference symbols from relocation entries
+            auto xrefSymbols = ElfSymbolExtractor::extractCrossReferenceSymbols(config.inputFile);
+
+            // Phase 3: Extract weak symbols (interrupt handlers, default implementations) from
+            // enhanced symbols
+            auto weakSymbols = ElfSymbolExtractor::getWeakSymbols(enhancedSymbols);
+            auto enhancedVariables = ElfSymbolExtractor::getVariables(enhancedSymbols);
+
+            // Execute ELF analysis with enhanced symbols integration
+            ElfReader elfReader(config);
+            elfReader.addEnhancedSymbols(enhancedSymbols);
+            elfReader.analyzeMemberParameters();
+
+            // Combine all variables for output
+            // (The enhanced symbols will be used by the OutputGenerator)
+        } else {
+            // Execute ELF analysis without enhanced symbols
+            ElfReader elfReader(config);
+            elfReader.analyzeMemberParameters();
+        }
 
     } catch (const ElfReaderExceptions::ElfParsingError& e) {
-        std::cerr << "ELF Analysis Error: " << e.getDetailedMessage() << std::endl;
+        std::cerr << "ELF Analysis Error: " << e.getDetailedMessage() << '\n';
         return 1;
     } catch (const std::exception& e) {
-        std::cerr << "Unexpected Error: " << e.what() << std::endl;
+        std::cerr << "Unexpected Error: " << e.what() << '\n';
         return 1;
     }
 
     return 0;
 }
-

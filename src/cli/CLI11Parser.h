@@ -6,6 +6,7 @@
 
 #include "../ElfReader.h"
 #include <CLI11.hpp>
+#include <optional>
 
 /**
  * @file CLI11Parser.h
@@ -30,10 +31,9 @@ public:
      * @brief Parse command line arguments using CLI11
      * @param argc Number of arguments
      * @param argv Array of argument strings
-     * @return Config structure with parsed options
-     * @throws CLI::ParseError if parsing fails (automatically handled by CLI11)
+     * @return std::optional<Config> with parsed options, or std::nullopt if parsing fails
      */
-    static Config parse(int argc, char* argv[]);
+    static std::optional<Config> parse(int argc, char* argv[]);
 
 private:
     static void setupApp(CLI::App& app, Config& config);

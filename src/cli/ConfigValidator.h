@@ -124,11 +124,10 @@ public:
 
     /**
      * @brief Get list of valid export formats
-     * @return Vector of supported export format strings
+     * @return Reference to vector of supported export format strings
      */
-    static std::vector<std::string> getValidExportFormats();
+    static const std::vector<std::string>& getValidExportFormats();
 
 private:
-    /// @brief Valid export formats
-    static const std::vector<std::string> VALID_EXPORT_FORMATS;
+    // No static member needed - using function-local static initialization
 };

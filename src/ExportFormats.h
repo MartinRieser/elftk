@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
-#include <memory>
 #include <cstdint>
 #include <fstream>
-#include <stdexcept>
-#include <sstream>
 #include <iomanip>
+#include <memory>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 // Forward declarations for C libraries
 struct ihex_state;
@@ -47,18 +47,18 @@ struct srec_state;
 
 // Forward declarations for arkku library types
 extern "C" {
-    #include "kk_ihex.h"
-    // Note: kk_srec.h has C99 'restrict' keyword that conflicts with C++
-    // We'll include it only in the .cpp file and forward declare the struct here
-    struct srec_state;
+#include "kk_ihex.h"
+// Note: kk_srec.h has C99 'restrict' keyword that conflicts with C++
+// We'll include it only in the .cpp file and forward declare the struct here
+struct srec_state;
 }
 
 /**
  * @brief Exportable memory region data
- * 
+ *
  * Represents a contiguous memory region extracted from ELF sections
  * with address, size, and binary data for export to various formats.
- * 
+ *
  * @note This is different from the ExportMemoryRegion struct in ElfStructures.h
  *       which is used for ELF program header analysis.
  */
@@ -67,8 +67,11 @@ struct ExportMemoryRegion {
     uint64_t size;              ///< Size of the region in bytes
     std::vector<uint8_t> data;  ///< Binary data content
     std::string section_name;   ///< Source ELF section name (e.g., ".text", ".data")
-    
-    ExportMemoryRegion(uint64_t addr, uint64_t sz, const std::vector<uint8_t>& d, const std::string& name = "")
+
+    ExportMemoryRegion(uint64_t addr,
+                       uint64_t sz,
+                       const std::vector<uint8_t>& d,
+                       const std::string& name = "")
         : address(addr), size(sz), data(d), section_name(name) {}
 };
 
@@ -88,7 +91,8 @@ public:
     static constexpr size_t DEFAULT_GAP_BRIDGE_SIZE = 256;  ///< Default gap bridging threshold
     static constexpr size_t SREC_GAP_BRIDGE_SIZE = 64;      ///< S-Record gap bridging threshold
     static constexpr size_t MAX_SREC_DATA_BYTES = 32;       ///< Maximum data bytes per S-Record
-    static constexpr uint8_t DEFAULT_HEX_BYTES_PER_RECORD = 16; ///< Default Intel HEX bytes per record
+    static constexpr uint8_t DEFAULT_HEX_BYTES_PER_RECORD =
+        16;  ///< Default Intel HEX bytes per record
 
     virtual ~BinaryExporter() = default;
 
@@ -102,8 +106,8 @@ public:
      * @return true if export succeeded
      */
     virtual bool exportToFile(const std::string& filename,
-                             const std::vector<ExportMemoryRegion>& regions,
-                             uint64_t base_offset = 0) = 0;
+                              const std::vector<ExportMemoryRegion>& regions,
+                              uint64_t base_offset = 0) = 0;
 
     /**
      * @brief Get the file extension for this format
@@ -136,7 +140,7 @@ protected:
      * @throws ExportException if validation fails
      */
     void validateInputs(const std::string& filename,
-                       const std::vector<ExportMemoryRegion>& regions) const;
+                        const std::vector<ExportMemoryRegion>& regions) const;
 };
 
 /**
@@ -168,15 +172,19 @@ public:
     explicit IntelHexExporter(uint8_t bytes_per_record = DEFAULT_HEX_BYTES_PER_RECORD);
 
     bool exportToFile(const std::string& filename,
-                     const std::vector<ExportMemoryRegion>& regions,
-                     uint64_t base_offset = 0) override;
+                      const std::vector<ExportMemoryRegion>& regions,
+                      uint64_t base_offset = 0) override;
 
-    std::string getFileExtension() const override { return ".hex"; }
-    std::string getFormatName() const override { return "Intel HEX"; }
+    std::string getFileExtension() const override {
+        return ".hex";
+    }
+    std::string getFormatName() const override {
+        return "Intel HEX";
+    }
 
 public:
-    // Thread-local storage for current output stream (public for C callback access)
-    static thread_local std::ofstream* current_output_stream_;
+    // Thread-local storage for current output stream (accessed by C callback)
+    static thread_local std::unique_ptr<std::ofstream> current_output_stream_;
 
 private:
     uint8_t bytes_per_record_;
@@ -187,7 +195,8 @@ private:
      * @param region Memory region to write
      * @param offset Address offset to apply
      */
-    bool writeRegionData(struct ihex_state* ihex, const ExportMemoryRegion& region, uint64_t offset);
+    bool
+    writeRegionData(struct ihex_state* ihex, const ExportMemoryRegion& region, uint64_t offset);
 };
 
 /**
@@ -209,10 +218,10 @@ public:
      * @brief S-Record format variants
      */
     enum class SRecordType {
-        AUTO,   ///< Automatically select based on address width
-        S19,    ///< 16-bit addresses (S1/S9 records)
-        S28,    ///< 24-bit addresses (S2/S8 records)
-        S37     ///< 32-bit addresses (S3/S7 records)
+        AUTO,  ///< Automatically select based on address width
+        S19,   ///< 16-bit addresses (S1/S9 records)
+        S28,   ///< 24-bit addresses (S2/S8 records)
+        S37    ///< 32-bit addresses (S3/S7 records)
     };
 
     /**
@@ -222,8 +231,8 @@ public:
     explicit SRecordExporter(SRecordType type = SRecordType::AUTO);
 
     bool exportToFile(const std::string& filename,
-                     const std::vector<ExportMemoryRegion>& regions,
-                     uint64_t base_offset = 0) override;
+                      const std::vector<ExportMemoryRegion>& regions,
+                      uint64_t base_offset = 0) override;
 
     std::string getFileExtension() const override;
     std::string getFormatName() const override;
@@ -232,7 +241,9 @@ public:
      * @brief Set S-Record type explicitly
      * @param type Desired S-Record format
      */
-    void setRecordType(SRecordType type) { record_type_ = type; }
+    void setRecordType(SRecordType type) {
+        record_type_ = type;
+    }
 
 private:
     SRecordType record_type_;
@@ -251,8 +262,10 @@ private:
      * @param offset Address offset to apply
      * @param type S-Record type to use
      */
-    bool writeRegionWithLibrary(std::ofstream& output, const ExportMemoryRegion& region,
-                               uint64_t offset, SRecordType type);
+    bool writeRegionWithLibrary(std::ofstream& output,
+                                const ExportMemoryRegion& region,
+                                uint64_t offset,
+                                SRecordType type);
 
     /**
      * @brief Convert S-Record type enum to string
@@ -268,10 +281,14 @@ private:
      */
     static constexpr uint8_t getAddressWidth(SRecordType type) {
         switch (type) {
-            case SRecordType::S19: return 2;
-            case SRecordType::S28: return 3;
-            case SRecordType::S37: return 4;
-            default: return 2;
+            case SRecordType::S19:
+                return 2;
+            case SRecordType::S28:
+                return 3;
+            case SRecordType::S37:
+                return 4;
+            default:
+                return 2;
         }
     }
 };
@@ -294,9 +311,9 @@ public:
      * @brief Gap handling strategies
      */
     enum class GapHandling {
-        SEPARATE_FILES, ///< Create separate files for each region
-        FILL_ZEROS,     ///< Fill gaps with zero bytes
-        FILL_PATTERN    ///< Fill gaps with specified pattern
+        SEPARATE_FILES,  ///< Create separate files for each region
+        FILL_ZEROS,      ///< Fill gaps with zero bytes
+        FILL_PATTERN     ///< Fill gaps with specified pattern
     };
 
     // Default values as constants
@@ -308,14 +325,18 @@ public:
      * @param fill_pattern Pattern byte for FILL_PATTERN mode (default: 0xFF)
      */
     explicit RawBinaryExporter(GapHandling gap_handling = GapHandling::SEPARATE_FILES,
-                              uint8_t fill_pattern = DEFAULT_FILL_PATTERN);
+                               uint8_t fill_pattern = DEFAULT_FILL_PATTERN);
 
     bool exportToFile(const std::string& filename,
-                     const std::vector<ExportMemoryRegion>& regions,
-                     uint64_t base_offset = 0) override;
+                      const std::vector<ExportMemoryRegion>& regions,
+                      uint64_t base_offset = 0) override;
 
-    std::string getFileExtension() const override { return ".bin"; }
-    std::string getFormatName() const override { return "Raw Binary"; }
+    std::string getFileExtension() const override {
+        return ".bin";
+    }
+    std::string getFormatName() const override {
+        return "Raw Binary";
+    }
 
 private:
     GapHandling gap_handling_;
@@ -329,8 +350,8 @@ private:
      * @return Generated filename
      */
     std::string generateRegionFilename(const std::string& base_filename,
-                                     const ExportMemoryRegion& region,
-                                     uint64_t base_offset) const;
+                                       const ExportMemoryRegion& region,
+                                       uint64_t base_offset) const;
 
     /**
      * @brief Export regions as separate binary files
@@ -339,8 +360,8 @@ private:
      * @param base_offset Address offset
      */
     bool exportSeparateFiles(const std::string& base_filename,
-                           const std::vector<ExportMemoryRegion>& regions,
-                           uint64_t base_offset);
+                             const std::vector<ExportMemoryRegion>& regions,
+                             uint64_t base_offset);
 
     /**
      * @brief Export regions as single binary file with gap filling
@@ -349,8 +370,8 @@ private:
      * @param base_offset Address offset
      */
     bool exportSingleFile(const std::string& filename,
-                         const std::vector<ExportMemoryRegion>& regions,
-                         uint64_t base_offset);
+                          const std::vector<ExportMemoryRegion>& regions,
+                          uint64_t base_offset);
 };
 
 /**

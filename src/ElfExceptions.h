@@ -15,6 +15,8 @@
  *   - ElfFileError (file access and validation)
  *   - DwarfParsingError (DWARF debug information)
  *   - SymbolResolutionError (symbol table processing)
+ *     - SymbolNotFoundException (specific symbol lookup failures)
+ *   - TypeResolutionException (DWARF type resolution failures)
  *   - MemoryAccessError (bounds checking and memory)
  *
  * Usage Examples:
@@ -256,8 +258,56 @@ public:
 };
 
 /**
+ * @brief Type resolution errors (Phase 3, Task 3.2)
+ *
+ * Thrown when DWARF type resolution fails or encounters unresolvable types.
+ * This includes missing type information, circular type references, or
+ * unsupported type constructs.
+ */
+class TypeResolutionException : public ElfParsingError {
+public:
+    /**
+     * @brief Construct type resolution error
+     * @param message Error description
+     * @param typeName Type that failed to resolve (optional)
+     */
+    explicit TypeResolutionException(const std::string& message, const std::string& typeName = "")
+        : ElfParsingError(message, typeName) {}
+
+    std::string getDetailedMessage() const override {
+        std::string msg = ElfParsingError::getDetailedMessage();
+        if (!context_.empty()) {
+            return msg + "\nFailed to resolve type: " + context_ +
+                   "\nSuggestion: Ensure binary has complete debug information and type definitions";
+        }
+        return msg + "\nSuggestion: Ensure binary has complete debug information and type definitions";
+    }
+};
+
+/**
+ * @brief Symbol not found errors (Phase 3, Task 3.2)
+ *
+ * Thrown when a requested symbol cannot be found in the symbol table.
+ * This is used for explicit symbol lookups where the symbol is expected to exist.
+ */
+class SymbolNotFoundException : public SymbolResolutionError {
+public:
+    /**
+     * @brief Construct symbol not found error
+     * @param symbolName Name of the missing symbol
+     */
+    explicit SymbolNotFoundException(const std::string& symbolName)
+        : SymbolResolutionError("Symbol not found: " + symbolName, symbolName) {}
+
+    std::string getDetailedMessage() const override {
+        return std::string(what()) +
+               "\nSuggestion: Verify symbol name spelling and that symbol is not stripped from binary";
+    }
+};
+
+/**
  * @brief Memory access and bounds checking errors
- * 
+ *
  * Thrown when there are memory access violations, attempts to read beyond
  * file boundaries, or other memory-related issues during ELF parsing.
  */

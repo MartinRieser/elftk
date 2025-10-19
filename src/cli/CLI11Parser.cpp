@@ -3,10 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CLI11Parser.h"
-#include "VersionInfo.h"
 #include <regex>
+#include "VersionInfo.h"
 
-std::string CompactFormatter::make_help(const CLI::App *app, std::string name, CLI::AppFormatMode mode) const {
+std::string
+CompactFormatter::make_help(const CLI::App* app, std::string name, CLI::AppFormatMode mode) const {
     std::string help = CLI::Formatter::make_help(app, name, mode);
 
     // Remove the positionals section entirely
@@ -24,7 +25,7 @@ std::string CompactFormatter::make_help(const CLI::App *app, std::string name, C
     return help;
 }
 
-Config CLI11Parser::parse(int argc, char* argv[]) {
+std::optional<Config> CLI11Parser::parse(int argc, char* argv[]) {
     Config config;
 
     CLI::App app{"elftk - ELF file tool kit for embedded software development", "elftk"};
@@ -34,7 +35,9 @@ Config CLI11Parser::parse(int argc, char* argv[]) {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
         // CLI11 automatically handles help, version, and error messages
-        std::exit(app.exit(e));
+        // Return the exit code instead of calling std::exit for thread safety
+        app.exit(e);  // This will print error message and exit status
+        return std::nullopt;
     }
 
     return config;
@@ -60,24 +63,30 @@ void CLI11Parser::setupApp(CLI::App& app, Config& config) {
 
     // Required positional argument
     app.add_option("file", config.inputFile, "ELF file to analyze")
-       ->required()
-       ->check(CLI::ExistingFile);
+        ->required()
+        ->check(CLI::ExistingFile);
 
     // Analysis mode options
     app.add_flag("--functions", config.functionsOnly, "Show functions only");
     app.add_flag("--variables", config.variablesOnly, "Show variables only");
     app.add_flag("--constants", config.constantsOnly, "Show constants only");
     app.add_flag("--memory-regions", config.extractMemoryRegions, "Show memory region mapping");
-    app.add_flag("--interrupt-vectors", config.extractInterruptVectors, "Show interrupt vector table");
+    app.add_flag(
+        "--interrupt-vectors", config.extractInterruptVectors, "Show interrupt vector table");
     app.add_option("--export", config.exportFormat, "Export firmware (hex, s19, s28, s37, bin)")
-       ->check(CLI::IsMember({"hex", "s19", "s28", "s37", "bin"}));
+        ->check(CLI::IsMember({"hex", "s19", "s28", "s37", "bin"}));
 
     // Output format options
-    app.add_flag("--json", [&config](bool flag) {
-        config.format = flag ? "json" : "csv";
-    }, "Output in JSON format (default: CSV)");
-    app.add_flag("--verbose", [&config](bool) {
-        config.verbosity = 1;
-    }, "Show detailed information");
+    app.add_flag(
+        "--json",
+        [&config](bool flag) { config.format = flag ? "json" : "csv"; },
+        "Output in JSON format (default: CSV)");
+    app.add_flag(
+        "--verbose", [&config](bool) { config.verbosity = 1; }, "Show detailed information");
     app.add_flag("--show-sections", config.showSections, "Include section names in output");
+
+    // Array expansion control
+    app.add_option("--array-limit", config.maxArrayExpansion, "Maximum array elements to expand (default: 10)")
+        ->check(CLI::PositiveNumber)
+        ->default_val(10);
 }

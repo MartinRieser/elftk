@@ -7,12 +7,12 @@
 
 /// @brief Build date macro (set by build system)
 #ifndef BUILD_DATE
-#define BUILD_DATE "unknown"
+    #define BUILD_DATE "unknown"
 #endif
 
 /// @brief Build time macro (set by build system)
 #ifndef BUILD_TIME
-#define BUILD_TIME "unknown"
+    #define BUILD_TIME "unknown"
 #endif
 
 const char* VersionInfo::getVersionString() {
@@ -62,7 +62,9 @@ void VersionInfo::showOptionsHelp(const char* /* program_name */) {
     std::cout << std::endl;
 
     std::cout << "Firmware Export:" << std::endl;
-    std::cout << "      --export=FORMAT  Export firmware file (hex=Intel HEX, s19/s28/s37=Motorola S-record, bin=raw binary)" << std::endl;
+    std::cout << "      --export=FORMAT  Export firmware file (hex=Intel HEX, s19/s28/s37=Motorola "
+                 "S-record, bin=raw binary)"
+              << std::endl;
     std::cout << std::endl;
 }
 
@@ -85,7 +87,9 @@ void VersionInfo::showExamples(const char* program_name) {
     std::cout << std::endl;
 
     std::cout << "  Firmware export:" << std::endl;
-    std::cout << "    " << program_name << " --export=hex firmware.elf    # Creates firmware.hex" << std::endl;
-    std::cout << "    " << program_name << " --export=bin firmware.elf    # Creates firmware.bin" << std::endl;
+    std::cout << "    " << program_name << " --export=hex firmware.elf    # Creates firmware.hex"
+              << std::endl;
+    std::cout << "    " << program_name << " --export=bin firmware.elf    # Creates firmware.bin"
+              << std::endl;
     std::cout << std::endl;
 }

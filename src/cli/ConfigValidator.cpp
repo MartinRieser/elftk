@@ -7,9 +7,11 @@
 #include <fstream>
 #include <sstream>
 
-const std::vector<std::string> ConfigValidator::VALID_EXPORT_FORMATS = {
-    "hex", "s19", "s28", "s37", "bin"
-};
+const std::vector<std::string>& ConfigValidator::getValidExportFormats() {
+    static const std::vector<std::string> VALID_EXPORT_FORMATS = {
+        "hex", "s19", "s28", "s37", "bin"};
+    return VALID_EXPORT_FORMATS;
+}
 
 ConfigValidator::ValidationResult ConfigValidator::validate(const Config& config) {
     ValidationResult result;
@@ -77,7 +79,8 @@ bool ConfigValidator::validateMutualExclusion(const Config& config, std::string&
         std::ostringstream oss;
         oss << "Cannot specify multiple exclusive options: ";
         for (size_t i = 0; i < active_options.size(); ++i) {
-            if (i > 0) oss << ", ";
+            if (i > 0)
+                oss << ", ";
             oss << active_options[i];
         }
         oss << ". Choose only one of --functions, --variables, or --constants.";
@@ -86,8 +89,10 @@ bool ConfigValidator::validateMutualExclusion(const Config& config, std::string&
     }
 
     // Check for other logical conflicts
-    if (!config.exportFormat.empty() && (config.functionsOnly || config.variablesOnly || config.constantsOnly)) {
-        error = "Binary export (--export) cannot be combined with specific analysis options (--functions, --variables, --constants). Use basic analysis for export.";
+    if (!config.exportFormat.empty() &&
+        (config.functionsOnly || config.variablesOnly || config.constantsOnly)) {
+        error = "Binary export (--export) cannot be combined with specific analysis options "
+                "(--functions, --variables, --constants). Use basic analysis for export.";
         return false;
     }
 
@@ -95,12 +100,14 @@ bool ConfigValidator::validateMutualExclusion(const Config& config, std::string&
 }
 
 bool ConfigValidator::validateExportFormat(const std::string& format, std::string& error) {
-    if (std::find(VALID_EXPORT_FORMATS.begin(), VALID_EXPORT_FORMATS.end(), format) == VALID_EXPORT_FORMATS.end()) {
+    const auto& valid_formats = getValidExportFormats();
+    if (std::find(valid_formats.begin(), valid_formats.end(), format) == valid_formats.end()) {
         std::ostringstream oss;
         oss << "Invalid export format '" << format << "'. Valid options are: ";
-        for (size_t i = 0; i < VALID_EXPORT_FORMATS.size(); ++i) {
-            if (i > 0) oss << ", ";
-            oss << VALID_EXPORT_FORMATS[i];
+        for (size_t i = 0; i < valid_formats.size(); ++i) {
+            if (i > 0)
+                oss << ", ";
+            oss << valid_formats[i];
         }
         error = oss.str();
         return false;
@@ -117,7 +124,8 @@ bool ConfigValidator::validateInputFile(const std::string& filepath, std::string
     // Check if file exists and is readable
     std::ifstream file(filepath, std::ios::binary);
     if (!file) {
-        error = "Cannot open input file '" + filepath + "'. Please check that the file exists and is readable.";
+        error = "Cannot open input file '" + filepath +
+                "'. Please check that the file exists and is readable.";
         return false;
     }
 
@@ -132,19 +140,18 @@ bool ConfigValidator::validateInputFile(const std::string& filepath, std::string
     return true;
 }
 
-bool ConfigValidator::checkLogicalConsistency(const Config& config, std::vector<std::string>& warnings) {
+bool ConfigValidator::checkLogicalConsistency(const Config& config,
+                                              std::vector<std::string>& warnings) {
     // Check for potentially inefficient combinations
     if (config.extractMemoryRegions && config.extractInterruptVectors) {
-        warnings.push_back("Both --memory-regions and --interrupt-vectors specified. Output may be verbose.");
+        warnings.push_back(
+            "Both --memory-regions and --interrupt-vectors specified. Output may be verbose.");
     }
 
     if (!config.exportFormat.empty() && config.verbosity > 0) {
-        warnings.push_back("--verbose has no effect with binary export (--export). Export produces binary data only.");
+        warnings.push_back("--verbose has no effect with binary export (--export). Export produces "
+                           "binary data only.");
     }
 
     return true;
-}
-
-std::vector<std::string> ConfigValidator::getValidExportFormats() {
-    return VALID_EXPORT_FORMATS;
 }

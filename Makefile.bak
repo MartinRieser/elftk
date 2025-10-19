@@ -116,7 +116,7 @@ else ifneq (,$(findstring MINGW,$(UNAME_S)))
 
 else
     # Default/unknown OS - use minimal settings
-    LDFLAGS =
+    LDFLAGS = -ldwarf
     INCLUDES =
 endif
 

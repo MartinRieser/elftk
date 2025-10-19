@@ -428,10 +428,7 @@ void MemoryMappedFile::mapFile(const std::string& filename) {
     }
 
     // Check for files larger than size_t can handle
-    // QuadPart is LONGLONG (signed), but file sizes are always non-negative
-    if (file_size_li.QuadPart < 0 ||
-        static_cast<unsigned long long>(file_size_li.QuadPart) >
-            std::numeric_limits<size_t>::max()) {
+    if (static_cast<uint64_t>(file_size_li.QuadPart) > std::numeric_limits<size_t>::max()) {
         CloseHandle(file_handle_);
         file_handle_ = INVALID_HANDLE_VALUE;
         throw FileAccessException("File too large for current platform: " + filename + " (" +

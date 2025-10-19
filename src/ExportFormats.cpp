@@ -3,48 +3,64 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ExportFormats.h"
-#include <iostream>
 #include <algorithm>
 #include <cstring>
-#include <sstream>
-#include <iomanip>
 #include <filesystem>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
 
 extern "C" {
-    #include "kk_ihex_read.h"
-    #include "kk_ihex_write.h"
-    // Define restrict as empty for C++ compatibility
-    #define restrict
-    #include "kk_srec.h"
-    #undef restrict
+#include "kk_ihex_read.h"
+#include "kk_ihex_write.h"
+// Define restrict as empty for C++ compatibility
+#define restrict
+#include "kk_srec.h"
+#undef restrict
 
-    /**
-     * @brief Required callback for arkku IHEX library (reading - not used in export)
-     */
-    ihex_bool_t ihex_data_read(struct ihex_state *ihex, ihex_record_type_t type, ihex_bool_t checksum_mismatch) {
-        (void)ihex; (void)type; (void)checksum_mismatch;
-        return 1; // Continue processing
-    }
+/**
+ * @brief Required callback for arkku IHEX library (reading - not used in export)
+ */
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - External library signature, cannot change
+ihex_bool_t
+ihex_data_read(struct ihex_state* ihex, ihex_record_type_t type, ihex_bool_t checksum_mismatch) {
+    (void)ihex;
+    (void)type;
+    (void)checksum_mismatch;
+    return 1;  // Continue processing
+}
 
-    /**
-     * @brief Thread-local callback for arkku IHEX library buffer flushing
-     * Uses thread-local storage instead of global state for thread safety
-     */
-    void ihex_flush_buffer(struct ihex_state* /* ihex */, char *buffer, char *eptr) {
-        if (IntelHexExporter::current_output_stream_ && IntelHexExporter::current_output_stream_->is_open()) {
-            size_t length = static_cast<size_t>(eptr - buffer);
-            IntelHexExporter::current_output_stream_->write(buffer, static_cast<std::streamsize>(length));
-        }
+/**
+ * @brief Thread-local callback for arkku IHEX library buffer flushing
+ * Uses thread-local storage instead of global state for thread safety
+ */
+void ihex_flush_buffer(struct ihex_state* /* ihex */, char* buffer, char* eptr) {
+    if (IntelHexExporter::current_output_stream_ &&
+        IntelHexExporter::current_output_stream_->is_open()) {
+        size_t length = static_cast<size_t>(eptr - buffer);
+        IntelHexExporter::current_output_stream_->write(buffer,
+                                                        static_cast<std::streamsize>(length));
     }
+}
 
-    /**
-     * @brief Required callback for arkku SREC library (reading - not used in export)
-     */
-    void srec_data_read(struct srec_state *srec, srec_record_number_t record_type,
-                       srec_address_t address, uint8_t *data, srec_count_t length,
-                       srec_bool_t checksum_error) {
-        (void)srec; (void)record_type; (void)address; (void)data; (void)length; (void)checksum_error;
-    }
+/**
+ * @brief Required callback for arkku SREC library (reading - not used in export)
+ */
+// NOLINTBEGIN(bugprone-easily-swappable-parameters) - External library signature, cannot change
+void srec_data_read(struct srec_state* srec,
+                    srec_record_number_t record_type,
+                    srec_address_t address,
+                    uint8_t* data,
+                    srec_count_t length,
+                    srec_bool_t checksum_error) {
+    (void)srec;
+    (void)record_type;
+    (void)address;
+    (void)data;
+    (void)length;
+    (void)checksum_error;
+}
+// NOLINTEND(bugprone-easily-swappable-parameters)
 }
 
 // ============================================================================
@@ -84,8 +100,9 @@ void BinaryExporter::validateInputs(const std::string& filename,
     }
 }
 
-std::vector<ExportMemoryRegion> BinaryExporter::filterRegions(const std::vector<ExportMemoryRegion>& regions,
-                                                        size_t max_gap) const {
+std::vector<ExportMemoryRegion>
+BinaryExporter::filterRegions(const std::vector<ExportMemoryRegion>& regions,
+                              size_t max_gap) const {
     std::vector<ExportMemoryRegion> filtered;
 
     if (regions.empty()) {
@@ -94,7 +111,8 @@ std::vector<ExportMemoryRegion> BinaryExporter::filterRegions(const std::vector<
 
     // Sort regions by address
     auto sorted_regions = regions;
-    std::sort(sorted_regions.begin(), sorted_regions.end(),
+    std::sort(sorted_regions.begin(),
+              sorted_regions.end(),
               [](const ExportMemoryRegion& a, const ExportMemoryRegion& b) {
                   return a.address < b.address;
               });
@@ -115,12 +133,14 @@ std::vector<ExportMemoryRegion> BinaryExporter::filterRegions(const std::vector<
             last.data.resize(old_size + gap + current.data.size());
 
             // Fill gap with zeros
-            std::fill(last.data.begin() + old_size,
-                     last.data.begin() + old_size + gap, 0);
+            std::fill(last.data.begin() + static_cast<long>(old_size),
+                      last.data.begin() + static_cast<long>(old_size + gap),
+                      0);
 
             // Copy new data
-            std::copy(current.data.begin(), current.data.end(),
-                     last.data.begin() + old_size + gap);
+            std::copy(current.data.begin(),
+                      current.data.end(),
+                      last.data.begin() + static_cast<long>(old_size + gap));
 
             last.size = last.data.size();
             last.section_name += "+" + current.section_name;
@@ -137,18 +157,17 @@ std::vector<ExportMemoryRegion> BinaryExporter::filterRegions(const std::vector<
 // ============================================================================
 
 // Thread-local storage for output stream
-thread_local std::ofstream* IntelHexExporter::current_output_stream_ = nullptr;
+thread_local std::unique_ptr<std::ofstream> IntelHexExporter::current_output_stream_ = nullptr;
 
-IntelHexExporter::IntelHexExporter(uint8_t bytes_per_record)
-    : bytes_per_record_(bytes_per_record) {
+IntelHexExporter::IntelHexExporter(uint8_t bytes_per_record) : bytes_per_record_(bytes_per_record) {
     if (bytes_per_record == 0) {
         throw ExportException("Invalid bytes_per_record: must be 1-255");
     }
 }
 
 bool IntelHexExporter::exportToFile(const std::string& filename,
-                                   const std::vector<ExportMemoryRegion>& regions,
-                                   uint64_t base_offset) {
+                                    const std::vector<ExportMemoryRegion>& regions,
+                                    uint64_t base_offset) {
     try {
         // Validate inputs first
         validateInputs(filename, regions);
@@ -160,7 +179,7 @@ bool IntelHexExporter::exportToFile(const std::string& filename,
         }
 
         // Set thread-local output stream
-        current_output_stream_ = &output_file;
+        current_output_stream_ = std::make_unique<std::ofstream>(std::move(output_file));
 
         // Filter and optimize regions
         auto filtered_regions = filterRegions(regions, DEFAULT_GAP_BRIDGE_SIZE);
@@ -173,35 +192,35 @@ bool IntelHexExporter::exportToFile(const std::string& filename,
         for (const auto& region : filtered_regions) {
             if (!writeRegionData(&ihex, region, base_offset)) {
                 throw ExportException("Failed to write memory region at address 0x" +
-                                    std::to_string(region.address));
+                                      std::to_string(region.address));
             }
         }
 
         // Write end-of-file record
         ihex_end_write(&ihex);
 
-        // Clean up thread-local storage
-        current_output_stream_ = nullptr;
+        // Clean up thread-local storage (this will also close the file)
+        current_output_stream_.reset();
 
-        output_file.close();
-        if (output_file.fail()) {
-            throw ExportException("Error closing output file: " + filename);
-        }
+        // Note: output_file was moved into current_output_stream_, so it's no longer valid
+        // The file will be properly closed when current_output_stream_ is reset
 
         return true;
 
     } catch (const ExportException&) {
-        current_output_stream_ = nullptr; // Clean up on exception
-        throw; // Re-throw export exceptions
+        current_output_stream_.reset();  // Clean up on exception
+        throw;                           // Re-throw export exceptions
     } catch (const std::exception& e) {
-        current_output_stream_ = nullptr; // Clean up on exception
+        current_output_stream_.reset();  // Clean up on exception
         throw ExportException("Intel HEX export failed: " + std::string(e.what()));
     }
 }
 
-bool IntelHexExporter::writeRegionData(struct ihex_state* ihex, const ExportMemoryRegion& region, uint64_t offset) {
+bool IntelHexExporter::writeRegionData(struct ihex_state* ihex,
+                                       const ExportMemoryRegion& region,
+                                       uint64_t offset) {
     if (!ihex || region.data.empty()) {
-        return true; // Nothing to write
+        return true;  // Nothing to write
     }
 
     uint64_t base_address = region.address + offset;
@@ -211,8 +230,8 @@ bool IntelHexExporter::writeRegionData(struct ihex_state* ihex, const ExportMemo
     const uint8_t* data_ptr = region.data.data();
 
     while (bytes_written < region.data.size()) {
-        size_t chunk_size = std::min(static_cast<size_t>(bytes_per_record_),
-                                   region.data.size() - bytes_written);
+        size_t chunk_size =
+            std::min(static_cast<size_t>(bytes_per_record_), region.data.size() - bytes_written);
 
         // Calculate current address for this chunk
         uint64_t current_address = base_address + bytes_written;
@@ -220,12 +239,12 @@ bool IntelHexExporter::writeRegionData(struct ihex_state* ihex, const ExportMemo
         // Validate address range for Intel HEX format
         if (current_address > 0xFFFFFFFF) {
             throw ExportException("Address too large for Intel HEX format: 0x" +
-                                std::to_string(current_address));
+                                  std::to_string(current_address));
         }
 
         // Set the address and write the data chunk
         ihex_write_at_address(ihex, static_cast<uint32_t>(current_address));
-        ihex_write_bytes(ihex, data_ptr + bytes_written, chunk_size);
+        ihex_write_bytes(ihex, data_ptr + bytes_written, static_cast<ihex_count_t>(chunk_size));
 
         bytes_written += chunk_size;
     }
@@ -233,21 +252,22 @@ bool IntelHexExporter::writeRegionData(struct ihex_state* ihex, const ExportMemo
     return true;
 }
 
-
 // ============================================================================
 // S-Record Exporter Implementation
 // ============================================================================
 
-SRecordExporter::SRecordExporter(SRecordType type)
-    : record_type_(type) {
-}
+SRecordExporter::SRecordExporter(SRecordType type) : record_type_(type) {}
 
 std::string SRecordExporter::getFileExtension() const {
     switch (record_type_) {
-        case SRecordType::S19: return ".s19";
-        case SRecordType::S28: return ".s28"; 
-        case SRecordType::S37: return ".s37";
-        default: return ".srec";
+        case SRecordType::S19:
+            return ".s19";
+        case SRecordType::S28:
+            return ".s28";
+        case SRecordType::S37:
+            return ".s37";
+        default:
+            return ".srec";
     }
 }
 
@@ -256,8 +276,8 @@ std::string SRecordExporter::getFormatName() const {
 }
 
 bool SRecordExporter::exportToFile(const std::string& filename,
-                                  const std::vector<ExportMemoryRegion>& regions,
-                                  uint64_t base_offset) {
+                                   const std::vector<ExportMemoryRegion>& regions,
+                                   uint64_t base_offset) {
     try {
         // Validate inputs first
         validateInputs(filename, regions);
@@ -293,7 +313,7 @@ bool SRecordExporter::exportToFile(const std::string& filename,
         for (const auto& region : filtered_regions) {
             if (!writeRegionWithLibrary(output_file, region, base_offset, actual_type)) {
                 throw ExportException("Failed to write S-Record for region at address 0x" +
-                                    std::to_string(region.address));
+                                      std::to_string(region.address));
             }
         }
 
@@ -320,7 +340,7 @@ bool SRecordExporter::exportToFile(const std::string& filename,
         return true;
 
     } catch (const ExportException&) {
-        throw; // Re-throw export exceptions
+        throw;  // Re-throw export exceptions
     } catch (const std::exception& e) {
         throw ExportException("S-Record export failed: " + std::string(e.what()));
     }
@@ -336,10 +356,12 @@ SRecordExporter::SRecordType SRecordExporter::determineRecordType(uint64_t max_a
     }
 }
 
-bool SRecordExporter::writeRegionWithLibrary(std::ofstream& output, const ExportMemoryRegion& region,
-                                            uint64_t offset, SRecordType type) {
+bool SRecordExporter::writeRegionWithLibrary(std::ofstream& output,
+                                             const ExportMemoryRegion& region,
+                                             uint64_t offset,
+                                             SRecordType type) {
     if (region.data.empty()) {
-        return true; // Nothing to write
+        return true;  // Nothing to write
     }
 
     uint64_t address = region.address + offset;
@@ -350,7 +372,8 @@ bool SRecordExporter::writeRegionWithLibrary(std::ofstream& output, const Export
     // Validate address range for the selected S-Record type
     uint64_t max_address_for_type = (1ULL << (addr_bytes * 8)) - 1;
     if (address + remaining > max_address_for_type) {
-        throw ExportException("Address range exceeds " + recordTypeToString(type) + " format capacity");
+        throw ExportException("Address range exceeds " + recordTypeToString(type) +
+                              " format capacity");
     }
 
     while (remaining > 0) {
@@ -360,7 +383,7 @@ bool SRecordExporter::writeRegionWithLibrary(std::ofstream& output, const Export
         uint8_t record_length = addr_bytes + static_cast<uint8_t>(chunk_size) + 1;
 
         // Write record type and length
-        char record_type_char = '1' + (addr_bytes - 2);
+        char record_type_char = static_cast<char>('1' + (addr_bytes - 2));
         output << 'S' << record_type_char;
 
         // Use stringstream for better formatting control
@@ -401,11 +424,16 @@ bool SRecordExporter::writeRegionWithLibrary(std::ofstream& output, const Export
 
 std::string SRecordExporter::recordTypeToString(SRecordType type) const {
     switch (type) {
-        case SRecordType::S19: return "S19";
-        case SRecordType::S28: return "S28";
-        case SRecordType::S37: return "S37";
-        case SRecordType::AUTO: return "AUTO";
-        default: return "Unknown";
+        case SRecordType::S19:
+            return "S19";
+        case SRecordType::S28:
+            return "S28";
+        case SRecordType::S37:
+            return "S37";
+        case SRecordType::AUTO:
+            return "AUTO";
+        default:
+            return "Unknown";
     }
 }
 
@@ -414,12 +442,11 @@ std::string SRecordExporter::recordTypeToString(SRecordType type) const {
 // ============================================================================
 
 RawBinaryExporter::RawBinaryExporter(GapHandling gap_handling, uint8_t fill_pattern)
-    : gap_handling_(gap_handling), fill_pattern_(fill_pattern) {
-}
+    : gap_handling_(gap_handling), fill_pattern_(fill_pattern) {}
 
 std::string RawBinaryExporter::generateRegionFilename(const std::string& base_filename,
-                                                     const ExportMemoryRegion& region,
-                                                     uint64_t base_offset) const {
+                                                      const ExportMemoryRegion& region,
+                                                      uint64_t base_offset) const {
     // Remove extension from base filename
     std::filesystem::path base_path(base_filename);
     std::string base = base_path.stem().string();
@@ -431,9 +458,8 @@ std::string RawBinaryExporter::generateRegionFilename(const std::string& base_fi
     // Create cross-platform safe filename with region info
     std::ostringstream filename_stream;
     filename_stream << base << "_0x" << std::hex << std::uppercase << std::setfill('0')
-                   << std::setw(8) << (region.address + base_offset) << "_"
-                   << (region.section_name.empty() ? "region" : region.section_name)
-                   << extension;
+                    << std::setw(8) << (region.address + base_offset) << "_"
+                    << (region.section_name.empty() ? "region" : region.section_name) << extension;
 
     // Ensure the filename is in the same directory as the base filename
     std::filesystem::path result_path = base_path.parent_path() / filename_stream.str();
@@ -467,15 +493,15 @@ bool RawBinaryExporter::exportToFile(const std::string& filename,
         }
 
     } catch (const ExportException&) {
-        throw; // Re-throw export exceptions
+        throw;  // Re-throw export exceptions
     } catch (const std::exception& e) {
         throw ExportException("Binary export failed: " + std::string(e.what()));
     }
 }
 
 bool RawBinaryExporter::exportSeparateFiles(const std::string& base_filename,
-                                           const std::vector<ExportMemoryRegion>& regions,
-                                           uint64_t base_offset) {
+                                            const std::vector<ExportMemoryRegion>& regions,
+                                            uint64_t base_offset) {
     for (const auto& region : regions) {
         // Generate cross-platform safe filename
         std::string filename = generateRegionFilename(base_filename, region, base_offset);
@@ -487,7 +513,7 @@ bool RawBinaryExporter::exportSeparateFiles(const std::string& base_filename,
 
         if (!region.data.empty()) {
             output.write(reinterpret_cast<const char*>(region.data.data()),
-                        static_cast<std::streamsize>(region.data.size()));
+                         static_cast<std::streamsize>(region.data.size()));
         }
 
         output.close();
@@ -504,7 +530,8 @@ bool RawBinaryExporter::exportSingleFile(const std::string& filename,
                                          uint64_t base_offset) {
     // Sort regions by address
     auto sorted_regions = regions;
-    std::sort(sorted_regions.begin(), sorted_regions.end(),
+    std::sort(sorted_regions.begin(),
+              sorted_regions.end(),
               [base_offset](const ExportMemoryRegion& a, const ExportMemoryRegion& b) {
                   return (a.address + base_offset) < (b.address + base_offset);
               });
@@ -529,18 +556,18 @@ bool RawBinaryExporter::exportSingleFile(const std::string& filename,
         if (region_start > current_pos) {
             uint64_t gap_size = region_start - current_pos;
             // Validate gap size to prevent memory issues
-            if (gap_size > 1024 * 1024 * 1024) { // 1GB limit
+            if (gap_size > static_cast<uint64_t>(1024) * 1024 * 1024) {  // 1GB limit
                 throw ExportException("Gap size too large: " + std::to_string(gap_size) + " bytes");
             }
             std::vector<uint8_t> fill_data(static_cast<size_t>(gap_size), fill_byte);
             output.write(reinterpret_cast<const char*>(fill_data.data()),
-                        static_cast<std::streamsize>(gap_size));
+                         static_cast<std::streamsize>(gap_size));
         }
 
         // Write region data
         if (!region.data.empty()) {
             output.write(reinterpret_cast<const char*>(region.data.data()),
-                        static_cast<std::streamsize>(region.data.size()));
+                         static_cast<std::streamsize>(region.data.size()));
         }
         current_pos = region_start + region.data.size();
     }
@@ -572,6 +599,6 @@ std::unique_ptr<BinaryExporter> createExporter(const std::string& format) {
         return std::make_unique<RawBinaryExporter>(RawBinaryExporter::GapHandling::FILL_ZEROS);
     } else {
         throw ExportException("Unsupported export format: " + format +
-                            ". Supported formats: hex, s19, s28, s37, srec, bin");
+                              ". Supported formats: hex, s19, s28, s37, srec, bin");
     }
 }

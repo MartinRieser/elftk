@@ -266,8 +266,14 @@ public:
                 filename_);
         }
 
-        // Note: uint16_t is already limited to 0-65535, no additional check needed
-        // MAX_SECTION_COUNT is 65536, which is >= uint16_t max, so no validation required
+        // Note: uint16_t max value is 65535, already enforced by type
+        if (section_count > static_cast<uint16_t>(MemoryConstants::MAX_SECTION_COUNT)) {
+            throw ElfReaderExceptions::ElfFileError(
+                ElfReaderExceptions::ElfFileError::ErrorType::InvalidFormat,
+                "Section count too large: " + std::to_string(section_count) + " (max: " +
+                    std::to_string(MemoryConstants::MAX_SECTION_COUNT) + ")",
+                filename_);
+        }
     }
 
     /**
@@ -275,10 +281,17 @@ public:
      * @param program_count Number of program headers
      * @throws ElfFileError if program header count is invalid
      */
-    void validateProgramCount(uint16_t /* program_count */) const {
-        // Note: uint16_t is already limited to 0-65535, no additional check needed
-        // MAX_PROGRAM_HEADERS is 65536, which is >= uint16_t max, so no validation required
-        // Program count of 0 is valid (not all ELF files have program headers)
+    void validateProgramCount(uint16_t program_count) const {
+        // Check against reasonable limit (uint16_t already ensures <= 65535)
+        if (program_count > static_cast<uint16_t>(MemoryConstants::MAX_PROGRAM_HEADERS)) {
+            throw ElfReaderExceptions::ElfFileError(
+                ElfReaderExceptions::ElfFileError::ErrorType::InvalidFormat,
+                "Program header count too large: " + std::to_string(program_count) + " (max: " +
+                    std::to_string(std::min(
+                        static_cast<uint32_t>(65535), static_cast<uint32_t>(MemoryConstants::MAX_PROGRAM_HEADERS))) +
+                    ")",
+                filename_);
+        }
     }
 
     /**
