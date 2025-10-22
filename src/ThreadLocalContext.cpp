@@ -25,19 +25,19 @@ bool ThreadDwarfContext::initialize(const std::string& elf_filename) {
     int result = dwarf_init_path(
         elf_filename.c_str(), nullptr, 0, DW_GROUPNUMBER_ANY, nullptr, nullptr, &dbg, &err);
     #elif defined(__linux__)
-    // Ubuntu/Debian libdwarf API with 11 parameters
-    int result = dwarf_init_path(elf_filename.c_str(),
-                                 nullptr,
-                                 0,
-                                 DW_GROUPNUMBER_ANY,
-                                 0,
-                                 nullptr,
-                                 nullptr,
-                                 0,
-                                 &dbg,
-                                 nullptr,
-                                 nullptr,
-                                 &err);
+    // Ubuntu/Debian libdwarf API with 12 parameters
+    int result = dwarf_init_path(elf_filename.c_str(),  // 1: path
+                                 nullptr,                // 2: true_path_out
+                                 0,                      // 3: pathlen
+                                 DW_GROUPNUMBER_ANY,     // 4: group_number
+                                 0,                      // 5: access
+                                 nullptr,                // 6: errhandler
+                                 nullptr,                // 7: errarg
+                                 &dbg,                   // 8: dbg_return
+                                 nullptr,                // 9: reserved1 (const char*)
+                                 0,                      // 10: reserved2 (Dwarf_Unsigned)
+                                 nullptr,                // 11: reserved3 (Dwarf_Unsigned*)
+                                 &err);                  // 12: error
     #else
     // Older libdwarf API with extended parameters (12 parameters)
     int result = dwarf_init_path(elf_filename.c_str(),
