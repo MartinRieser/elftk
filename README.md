@@ -102,10 +102,10 @@ Before building, ensure you have:
 ### Windows (MSYS2)
 
 1. **Install MSYS2** from https://www.msys2.org/
-2. **Open MSYS2 terminal** and install development dependencies:
+2. **Open MSYS2 UCRT64 terminal** and install development dependencies:
    ```bash
    pacman -S base-devel mingw-w64-ucrt-x86_64-toolchain git
-   pacman -S mingw-w64-ucrt-x86_64-libdwarf
+   pacman -S mingw-w64-ucrt-x86_64-libdwarf mingw-w64-ucrt-x86_64-libelf
    ```
 
    **What this installs:**
@@ -113,6 +113,7 @@ Before building, ensure you have:
    - `mingw-w64-ucrt-x86_64-toolchain` - GCC compiler for Windows
    - `git` - version control system for cloning the repository
    - `mingw-w64-ucrt-x86_64-libdwarf` - DWARF debug information library
+   - `mingw-w64-ucrt-x86_64-libelf` - ELF file handling library
 3. **Build the tool:**
    ```bash
    git clone <repository-url>

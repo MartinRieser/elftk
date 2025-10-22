@@ -95,29 +95,28 @@ jobs:
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
-        msystem: MINGW64
+        msystem: UCRT64
         update: true
         install: >-
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-make
-          mingw-w64-x86_64-libdwarf
-          mingw-w64-x86_64-pkg-config
-          make
+          base-devel
+          mingw-w64-ucrt-x86_64-toolchain
+          mingw-w64-ucrt-x86_64-libdwarf
+          mingw-w64-ucrt-x86_64-libelf
+          git
           zip
 
     - name: Build Windows executable
       shell: msys2 {0}
       run: |
-        export PATH="/mingw64/bin:$PATH"
-        # Override MINGW64_PATH to point to current MSYS2 installation
-        export MINGW64_PATH=/mingw64
-        # Check if libelf is available, if not build without it
-        if [ ! -f "/mingw64/lib/libelf.a" ] && [ ! -f "/mingw64/lib/libelf.dll.a" ]; then
-          echo "⚠️ libelf not found in MSYS2, building with fallback flags..."
-          export LDFLAGS="-L/mingw64/lib -ldwarf -Wl,--unresolved-symbols=ignore-in-object-files"
-        fi
+        # Verify environment
+        echo "MSYSTEM: $MSYSTEM"
+        which g++
+        g++ --version
+
+        # Build the project
         make clean
         make windows
+
         # Create proper Windows distribution
         mkdir -p dist-windows
         cp build/bin/* dist-windows/
