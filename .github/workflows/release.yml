@@ -101,6 +101,7 @@ jobs:
           mingw-w64-x86_64-gcc
           mingw-w64-x86_64-make
           mingw-w64-x86_64-libdwarf
+          mingw-w64-x86_64-elfutils
           mingw-w64-x86_64-pkg-config
           make
           zip
