@@ -38,14 +38,19 @@ UCRT64_PATH ?= $(MSYS2_ROOT)/ucrt64
 # Detect active MSYS2 environment
 MSYSTEM ?= $(shell echo $$MSYSTEM)
 ifeq ($(MSYSTEM),UCRT64)
-    ACTIVE_MSYS_PATH := $(UCRT64_PATH)
+    # In UCRT64, use system paths (works in both local and CI)
+    ACTIVE_MSYS_PATH := /ucrt64
+    ACTIVE_MSYS_FULL_PATH := $(UCRT64_PATH)
 else ifeq ($(MSYSTEM),MINGW64)
-    ACTIVE_MSYS_PATH := $(MINGW64_PATH)
+    ACTIVE_MSYS_PATH := /mingw64
+    ACTIVE_MSYS_FULL_PATH := $(MINGW64_PATH)
 else ifeq ($(MSYSTEM),MINGW32)
-    ACTIVE_MSYS_PATH := $(MSYS2_ROOT)/mingw32
+    ACTIVE_MSYS_PATH := /mingw32
+    ACTIVE_MSYS_FULL_PATH := $(MSYS2_ROOT)/mingw32
 else
     # Fallback to UCRT64 if MSYSTEM is not set
-    ACTIVE_MSYS_PATH := $(UCRT64_PATH)
+    ACTIVE_MSYS_PATH := /ucrt64
+    ACTIVE_MSYS_FULL_PATH := $(UCRT64_PATH)
 endif
 
 # Set compiler based on OS
@@ -127,7 +132,7 @@ else ifneq (,$(findstring MINGW,$(UNAME_S)))
     # Add Windows-specific linker flags
     LDFLAGS += $(WINDOWS_FLAGS)
 
-    # Include directories - allow override from environment/command line for GitHub Actions
+    # Include directories - use system paths that work in both local and CI environments
     INCLUDES = -I$(ACTIVE_MSYS_PATH)/include/libdwarf-2 -I$(ACTIVE_MSYS_PATH)/include
 
     # Ensure ARM toolchain is available for examples
@@ -265,16 +270,16 @@ macos-dist: macos
 windows:
 	@echo "Building for Windows..."
 	@echo "Detected MSYS2 environment: $(MSYSTEM)"
-	@echo "Using path: $(ACTIVE_MSYS_PATH)"
+	@echo "Using system path: $(ACTIVE_MSYS_PATH)"
 	@$(MAKE) $(TARGET)
 	@echo "Copying required DLLs for standalone distribution..."
-	@cp $(ACTIVE_MSYS_PATH)/bin/libdwarf-2.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/libdwarf-2.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/libdwarf-2.dll $(BINDIR)/ 2>/dev/null || true
-	@cp $(ACTIVE_MSYS_PATH)/bin/libdwarfp-2.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/libdwarfp-2.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/libdwarfp-2.dll $(BINDIR)/ 2>/dev/null || true
-	@cp $(ACTIVE_MSYS_PATH)/bin/libgcc_s_seh-1.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/libgcc_s_seh-1.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/libgcc_s_seh-1.dll $(BINDIR)/ 2>/dev/null || true
-	@cp $(ACTIVE_MSYS_PATH)/bin/libstdc++-6.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/libstdc++-6.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/libstdc++-6.dll $(BINDIR)/ 2>/dev/null || true
-	@cp $(ACTIVE_MSYS_PATH)/bin/libwinpthread-1.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/libwinpthread-1.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/libwinpthread-1.dll $(BINDIR)/ 2>/dev/null || true
-	@cp $(ACTIVE_MSYS_PATH)/bin/zlib1.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/zlib1.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/zlib1.dll $(BINDIR)/ 2>/dev/null || true
-	@cp $(ACTIVE_MSYS_PATH)/bin/libzstd.dll $(BINDIR)/ 2>/dev/null || cp /mingw64/bin/libzstd.dll $(BINDIR)/ 2>/dev/null || cp /ucrt64/bin/libzstd.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/libdwarf-2.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/libdwarfp-2.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/libgcc_s_seh-1.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/libstdc++-6.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/libwinpthread-1.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/zlib1.dll $(BINDIR)/ 2>/dev/null || true
+	@cp $(ACTIVE_MSYS_PATH)/bin/libzstd.dll $(BINDIR)/ 2>/dev/null || true
 	@echo "Windows build completed. Binary: $(TARGET).exe"
 	@echo "Note: Required DLLs have been copied to $(BINDIR) for standalone execution."
 
