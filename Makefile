@@ -172,8 +172,8 @@ all: $(TARGET)
 
 $(TARGET): $(OBJECTS) $(THIRDPARTY_OBJECTS) | $(BINDIR)
 ifneq (,$(findstring MINGW,$(UNAME_S)))
-	# Windows: Set temp directory and link manually to avoid permission issues
-	mkdir -p temp-build && cd $(BINDIR) && TMPDIR=../../temp-build TMP=../../temp-build TEMP=../../temp-build $(CXX) -o $(notdir $@) $(addprefix ../../,$(OBJECTS)) $(addprefix ../../,$(THIRDPARTY_OBJECTS)) $(LDFLAGS)
+	# Windows: Link executable with proper library order
+	$(CXX) -o $@ $(OBJECTS) $(THIRDPARTY_OBJECTS) $(LDFLAGS)
 else
 	$(CXX) $(OBJECTS) $(THIRDPARTY_OBJECTS) $(LDFLAGS) -o $@
 endif
