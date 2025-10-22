@@ -79,6 +79,12 @@ else ifeq ($(UNAME_S),Linux)
             # Fallback paths for Ubuntu/Debian - try multiple common locations
             DWARF_HEADER_PATHS := /usr/include/libdwarf /usr/include/elfutils /usr/include/libelf /usr/include
             INCLUDES := $(foreach path,$(DWARF_HEADER_PATHS),-I$(path))
+            
+            # Check if elfutils headers are available
+            ifneq (,$(wildcard /usr/include/elfutils/libelf.h))
+                CXXFLAGS += -DHAVE_ELFUTILS_HEADERS=1
+            endif
+            
             LDFLAGS = -ldwarf -lelf -lz
         endif
     endif

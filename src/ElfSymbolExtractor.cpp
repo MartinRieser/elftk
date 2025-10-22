@@ -5,8 +5,19 @@
 #include "ElfSymbolExtractor.h"
 #include <cxxabi.h>
 #include <fcntl.h>
+#ifdef __linux__
+// Try different include paths for various Linux distributions
+#ifdef HAVE_ELFUTILS_HEADERS
+#include <elfutils/libelf.h>
+#include <elfutils/gelf.h>
+#else
+#include <libelf.h>
+#include <gelf.h>
+#endif
+#else
 #include <libelf/gelf.h>
 #include <libelf/libelf.h>
+#endif
 #include <unistd.h>
 #include <algorithm>
 #include <cctype>
