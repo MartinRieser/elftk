@@ -77,7 +77,7 @@ else ifeq ($(UNAME_S),Linux)
             LDFLAGS = $(shell pkg-config --libs libdwarf 2>/dev/null)
         else
             # Fallback paths for Ubuntu/Debian - try multiple common locations
-            DWARF_HEADER_PATHS := /usr/include/libdwarf /usr/include/elfutils /usr/include
+            DWARF_HEADER_PATHS := /usr/include/libdwarf /usr/include/elfutils /usr/include/libelf /usr/include
             INCLUDES := $(foreach path,$(DWARF_HEADER_PATHS),-I$(path))
             LDFLAGS = -ldwarf -lelf -lz
         endif
