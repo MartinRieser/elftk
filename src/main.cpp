@@ -75,7 +75,15 @@ int main(int argc, char* argv[]) {
         auto config_result = CLI11Parser::parse(argc, argv);
         if (!config_result) {
             // CLI11 already printed the error/help message
-            return 1;
+            // Check if this was a help or version request (should exit with 0)
+            // or an error (should exit with 1)
+            for (int i = 1; i < argc; i++) {
+                if (std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h" ||
+                    std::string(argv[i]) == "--version" || std::string(argv[i]) == "-v") {
+                    return 0;  // Help/version should exit with 0
+                }
+            }
+            return 1;  // Error should exit with 1
         }
         Config config = *config_result;
 
