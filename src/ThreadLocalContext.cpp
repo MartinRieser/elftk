@@ -24,6 +24,20 @@ bool ThreadDwarfContext::initialize(const std::string& elf_filename) {
     // libdwarf 2.x API or macOS/Windows with simplified API (8 parameters)
     int result = dwarf_init_path(
         elf_filename.c_str(), nullptr, 0, DW_GROUPNUMBER_ANY, nullptr, nullptr, &dbg, &err);
+    #elif defined(__linux__)
+    // Ubuntu/Debian libdwarf API with 11 parameters
+    int result = dwarf_init_path(elf_filename.c_str(),
+                                 nullptr,
+                                 0,
+                                 DW_GROUPNUMBER_ANY,
+                                 0,
+                                 nullptr,
+                                 nullptr,
+                                 0,
+                                 &dbg,
+                                 nullptr,
+                                 nullptr,
+                                 &err);
     #else
     // Older libdwarf API with extended parameters (12 parameters)
     int result = dwarf_init_path(elf_filename.c_str(),
@@ -59,7 +73,13 @@ bool ThreadDwarfContext::initialize(const std::string& elf_filename) {
 void ThreadDwarfContext::cleanup() {
     if (is_initialized && dbg != nullptr) {
 #ifdef HAVE_LIBDWARF
+        #if defined(__linux__)
+        // Ubuntu/Debian libdwarf requires error parameter
+        dwarf_finish(dbg, &err);
+        #else
+        // macOS/Windows libdwarf doesn't require error parameter
         dwarf_finish(dbg);
+        #endif
 #endif
         dbg = nullptr;
         err = nullptr;
