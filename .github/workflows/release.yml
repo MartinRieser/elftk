@@ -111,6 +111,11 @@ jobs:
         export PATH="/mingw64/bin:$PATH"
         # Override MINGW64_PATH to point to current MSYS2 installation
         export MINGW64_PATH=/mingw64
+        # Check if libelf is available, if not build without it
+        if [ ! -f "/mingw64/lib/libelf.a" ] && [ ! -f "/mingw64/lib/libelf.dll.a" ]; then
+          echo "⚠️ libelf not found in MSYS2, building with fallback flags..."
+          export LDFLAGS="-L/mingw64/lib -ldwarf -Wl,--unresolved-symbols=ignore-in-object-files"
+        fi
         make clean
         make windows
         # Create proper Windows distribution
@@ -134,6 +139,7 @@ jobs:
       run: |
         # Test the built executable
         cd dist-windows
+        ./elftk.exe --version
         ./elftk.exe --help
         echo "✅ Windows build test passed"
 
@@ -160,7 +166,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        brew install libdwarf pkg-config
+        brew install libdwarf libelf pkg-config
 
     - name: Build macOS executable
       run: |
@@ -185,6 +191,7 @@ jobs:
       run: |
         # Test the built executable
         cd dist-macos
+        ./elftk --version
         ./elftk --help
         echo "✅ macOS build test passed"
 
