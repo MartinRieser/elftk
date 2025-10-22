@@ -117,14 +117,15 @@ else ifneq (,$(findstring MINGW,$(UNAME_S)))
     # Include directories - allow override from environment/command line for GitHub Actions
     INCLUDES = -I$(MINGW64_PATH)/include/libdwarf-2 -I$(MINGW64_PATH)/include
     
-    # Check if elfutils headers are available for Windows
+    # Windows: libelf/elfutils are typically not available
+    # Check if elfutils headers are available (unlikely on Windows)
     ifneq (,$(wildcard $(MINGW64_PATH)/include/elfutils/libelf.h))
         INCLUDES += -I$(MINGW64_PATH)/include/elfutils
         CXXFLAGS += -DHAVE_ELFUTILS_HEADERS=1 -DHAVE_LIBELF=1
     else ifneq (,$(wildcard $(MINGW64_PATH)/include/libelf.h))
         CXXFLAGS += -DHAVE_LIBELF=1
     else
-        $(warning Windows libelf/elfutils headers not found. ELF functionality will be limited.)
+        $(warning Windows libelf/elfutils headers not found. Building with limited ELF functionality.)
         CXXFLAGS += -DHAVE_LIBELF=0
     endif
 
