@@ -20,14 +20,12 @@
 // StringInterner replaced with ThreadSafeStringInterner
 #include "ThreadSafeContainers.h"
 
-// Phase 2.2: Parallel Processing
+// Parallel processing support
 #include "ParallelWorkDistribution.h"
 #include "ThreadPool.h"
 
-// Forward declarations for Phase 1
+// Forward declarations
 struct ExportMemoryRegion;
-
-// Forward declarations for Phase 3 (Task 3.1)
 class OutputGenerator;
 class DwarfTypeResolver;
 
@@ -238,17 +236,17 @@ struct Config {
     bool extractMemoryRegions = false;     ///< Extract and display memory region mapping
     bool showMemoryLayout = false;         ///< Show ELF memory layout from program headers
 
-    // Phase 2 Enhancement Options
+    // Symbol extraction options
     bool enableElfSymbolExtraction = true;  ///< Enable ELF symbol table extraction
     bool enableCxxDemangling = true;        ///< Enable C++ symbol demangling
     bool showMangledNames = false;          ///< Show original mangled names in brackets
     bool enableSectionDiscovery = true;     ///< Enable section-based variable discovery
 
-    // Phase 2A.2: External Validation Framework Options (keep for future use)
+    // External validation framework options
     std::string validateTool;  ///< External validation tool ("gdb", "objdump", "readelf", "all")
     std::string validationOutput;  ///< Output file for validation report
 
-    // Phase 2.2: Parallel Processing Options (Always enabled with auto-detection)
+    // Parallel processing options (always enabled with auto-detection)
     bool enableParallelProcessing = true;  ///< Enable parallel DWARF processing (always on)
     size_t threadCount = 0;                ///< Number of worker threads (0 = auto-detect)
     size_t parallelCUTThreshold = 10;      ///< Minimum CUs to enable parallel processing
@@ -423,7 +421,7 @@ public:
     void analyzeMemberParameters();
 
     /**
-     * @brief Phase 1: Perform binary export to specified format
+     * @brief Perform binary export to specified format
      *
      * Extracts loadable sections from the ELF file and exports them to the
      * format specified in config_.exportFormat with optional address offset.
@@ -518,15 +516,119 @@ public:
      */
     void addEnhancedSymbols(const std::vector<ExtractedSymbol>& enhanced_symbols);
 
+    // ========================================================================
+    // Advanced Type Resolution
+    // ========================================================================
+
+    /**
+     * @brief Type identifier for unique type resolution
+     *
+     * Contains multiple identifiers for robust type lookup when dealing with
+     * potentially ambiguous type names. Uses C++ linkage names as the primary
+     * unique identifier, with qualified names as fallback for C structures.
+     */
+    struct TypeIdentifier {
+        std::string linkage_name;    ///< C++ mangled name for unique identification
+        std::string qualified_name;  ///< Namespace-qualified name (e.g., "Namespace::TypeName")
+        Dwarf_Off die_offset;        ///< DWARF DIE offset for direct access
+
+        TypeIdentifier() : die_offset(0) {}
+    };
+
+    /**
+     * @brief Follow DWARF type reference chain to resolve the actual type
+     *
+     * Resolves type ambiguity by following DW_AT_type reference chains through
+     * const/volatile/typedef/pointer qualifiers until reaching the underlying
+     * structure or class definition. Extracts both the C++ linkage name (when
+     * available) for unique identification and the qualified name as fallback.
+     *
+     * This is critical for correctly identifying types in programs where multiple
+     * different types may share the same simple name (common in C++ with nested
+     * types or templates).
+     *
+     * @param dbg DWARF debug handle
+     * @param start_die Starting DIE (variable, member, parameter, etc.)
+     * @return TypeIdentifier containing linkage_name, qualified_name, and DIE offset
+     *
+     * ## Example Resolution Chain:
+     * ```
+     * Variable DIE
+     *   → DW_AT_type → const qualifier DIE
+     *     → DW_AT_type → typedef DIE
+     *       → DW_AT_type → structure DIE (final type)
+     *         → DW_AT_linkage_name: mangled C++ name (unique)
+     *         → DW_AT_name: simple name
+     * ```
+     *
+     * ## Return Value:
+     * - linkage_name: C++ mangled name (empty for plain C structs)
+     * - qualified_name: Namespace::TypeName or simple TypeName
+     * - die_offset: DWARF DIE offset of the final type
+     */
+    TypeIdentifier resolveTypeIdentifier(Dwarf_Debug dbg, Dwarf_Die start_die) const;
+
+    // ========================================================================
+    // Type Match Confidence System
+    // ========================================================================
+
+    /**
+     * @brief Type match confidence levels for strict constants mode
+     *
+     * Confidence scoring prevents wrong type expansion in constants mode.
+     * Higher confidence = more reliable type match.
+     */
+    enum class TypeMatchConfidence {
+        EXACT_LINKAGE_NAME,    ///< Unique C++ mangled name - 100% confidence
+        EXACT_QUALIFIED_NAME,  ///< Fully qualified name, no ambiguity - 90% confidence
+        EXACT_DIE_OFFSET,      ///< DIE offset match - 85% confidence
+        SINGLE_SIMPLE_MATCH,   ///< Simple name with only ONE match - 70% confidence
+        AMBIGUOUS_NAME,        ///< Simple name, multiple matches - 20% confidence
+        NO_MATCH               ///< Type not found - 0% confidence
+    };
+
+    /**
+     * @brief Get confidence level for a type name match
+     *
+     * Evaluates how reliably we can resolve a type name to the correct type.
+     * Used in constants mode to prevent expanding structures with wrong members.
+     *
+     * @param type_name Type name to evaluate (could be linkage name, qualified name, or simple
+     * name)
+     * @return TypeMatchConfidence indicating reliability of the match
+     *
+     * ## Confidence Levels:
+     * - EXACT_LINKAGE_NAME (100%): C++ mangled name (e.g., "N9Namespace8TypeNameE") - UNIQUE!
+     * - EXACT_QUALIFIED_NAME (90%): Fully qualified name (e.g., "Namespace::TypeName") - usually
+     * unique
+     * - EXACT_DIE_OFFSET (85%): Type with DIE offset key (e.g., "TypeName@0x1a2b3c") - unique per
+     * compilation unit
+     * - SINGLE_SIMPLE_MATCH (70%): Simple name with exactly one type definition (safe)
+     * - AMBIGUOUS_NAME (20%): Simple name with multiple possible types (DANGEROUS!)
+     * - NO_MATCH (0%): Type not found in registry
+     *
+     * ## Usage Example:
+     * ```cpp
+     * if (config_.constantsOnly) {
+     *     auto confidence = getTypeMatchConfidence(type_name);
+     *     if (confidence == TypeMatchConfidence::AMBIGUOUS_NAME) {
+     *         // DON'T expand - better to show no members than WRONG members!
+     *         return single_unexpanded_member;
+     *     }
+     * }
+     * ```
+     */
+    TypeMatchConfidence getTypeMatchConfidence(const std::string& type_name) const;
+
 private:
-    // Phase 1: Binary Export Helper Methods
+    // Binary Export Helper Methods
     std::vector<ExportMemoryRegion> extractMemoryRegions();
     std::string getSectionName(uint16_t section_index) const;
     std::string getSectionNameForAddress(uint64_t address) const;
     bool isSectionLoadable(uint16_t section_index);
     bool readSectionData(uint16_t section_index, std::vector<uint8_t>& data) const;
 
-    // Refactored analysis methods (Phase 2, Task 2.2)
+    // Refactored analysis methods
     void analyzeInterruptVectors();
     void analyzeMemoryRegions();
     void analyzeVariablesAndMembers();
@@ -601,7 +703,7 @@ private:
     Config config_;
 
     /**
-     * @brief Output generator for JSON/CSV formatting (Phase 3.1)
+     * @brief Output generator for JSON/CSV formatting
      *
      * Handles all output generation for variables, functions, and analysis results.
      * Extracted from ElfReader to improve modularity and testability.
@@ -621,7 +723,7 @@ private:
     std::unique_ptr<FileAccessStrategy> file_access_;
 
     /**
-     * @brief Memory validator for safe ELF file operations (Phase 1 safety improvement)
+     * @brief Memory validator for safe ELF file operations
      *
      * Provides comprehensive bounds checking and input validation for all ELF
      * file access operations. Prevents buffer overflows, integer overflow attacks,
@@ -641,12 +743,12 @@ private:
     mutable ThreadSafeStringInterner string_interner_;
 
     /**
-     * @brief Cache for demangled C++ symbol names (Phase 3, Task 3.4)
+     * @brief Cache for demangled C++ symbol names
      *
      * Stores the mapping from mangled name → demangled name to avoid
      * repeated expensive demangling operations for the same symbol.
      *
-     * Example: "_ZN7NAMEOne7Counter7counterE" → "NAMEOne::Counter::counter"
+     * Example: "_ZN9Namespace7MyClass8myMethodE" → "Namespace::MyClass::myMethod"
      *
      * Performance impact: Reduces demangling overhead by ~80% for large
      * firmware binaries with many C++ symbols.
@@ -777,13 +879,13 @@ private:
     mutable PerformanceMetrics performance_metrics_;
 
     /**
-     * @brief Phase 7.1B: Advanced type information with DWARF 5 features
+     * @brief Advanced type information with DWARF 5 features
      *
      * Maps type names to enhanced type information including qualifiers,
      * template parameters, optimization hints, and performance data.
      *
      * Example entries:
-     * - "const SensorData" -> AdvancedTypeInfo with CONST qualifier
+     * - "const MyData" -> AdvancedTypeInfo with CONST qualifier
      * - "MyTemplate<int, 42>" -> AdvancedTypeInfo with template parameters
      */
     std::map<std::string, AdvancedTypeInfo> advanced_types_;
@@ -805,7 +907,7 @@ private:
     std::map<std::string, std::vector<TemplateInfo>> template_specializations_;
 
     /**
-     * @brief Phase 7.2: Interrupt vector table information
+     * @brief Interrupt vector table information
      *
      * Contains extracted interrupt vector table data when --interrupt-vectors flag is used.
      * Provides comprehensive mapping of interrupt vectors to handler functions.
@@ -814,7 +916,7 @@ private:
     MemoryRegionMap memory_region_map_;
 
     // ========================================================================
-    // Phase 2.2: Parallel Processing Infrastructure
+    // Parallel Processing Infrastructure
     // ========================================================================
 
     /**
@@ -950,7 +1052,7 @@ private:
     std::vector<ExtractedSymbol> enhanced_symbols_;
 
     /**
-     * @brief Phase 7.1A: Function information with local variable analysis
+     * @brief Function information with local variable analysis
      *
      * Maps function names to complete function information including local variables,
      * parameters, and stack frame layout. Only populated when local variable analysis
@@ -1145,7 +1247,7 @@ private:
     void validateElfFile();
 
     // ========================================================================
-    // Phase 2.2: Parallel Processing Methods
+    // Parallel Processing Methods
     // ========================================================================
 
     /**
@@ -1356,6 +1458,21 @@ private:
     std::string readMemoryAtAddress(uint64_t address, uint64_t size) const;
 
     /**
+     * @brief Read constant value from memory and format based on type
+     *
+     * Universal function to read constant values from ELF memory sections (.rodata, etc.)
+     * and format them as strings based on their type (float, int, char, etc.)
+     *
+     * @param address Memory address to read from
+     * @param type_name DWARF type name (e.g., "float", "int32_t", "unsigned char")
+     * @param size Size in bytes to read
+     * @return Formatted string representation of the value, or empty string if unable to read
+     */
+    std::string readConstantValueFromMemory(uint64_t address,
+                                            const std::string& type_name,
+                                            uint64_t size) const;
+
+    /**
      * @brief Helper method to generate generic parameter names for any structure
      *
      * Maps parameter indices to generic but consistent names for any structure
@@ -1367,7 +1484,7 @@ private:
     std::string getGenericParamName(size_t param_index) const;
 
     /**
-     * @brief Phase 7.1A: Processes function DIEs to extract local variable information
+     * @brief Processes function DIEs to extract local variable information
      *
      * Analyzes function DIEs to extract local variables, parameters, and stack frame
      * information. Only processes functions when local variable analysis is enabled
@@ -1444,10 +1561,10 @@ private:
      * Output: return "" (empty string)
      * ```
      */
-    // Type resolution methods moved to dwarf/DwarfTypeResolver (Phase 3, Task 3.1)
+    // Type resolution methods moved to dwarf/DwarfTypeResolver
 
     /**
-     * @brief Phase 7.1B: Process DWARF 5 type qualifiers
+     * @brief Process DWARF 5 type qualifiers
      *
      * Handles advanced DWARF 5 type qualifiers such as immutable, packed, atomic,
      * and dynamic types. Extracts qualifier information and associates it with
@@ -1470,7 +1587,7 @@ private:
                                     TypeQualifiers qualifier);
 
     /**
-     * @brief Phase 7.1B: Process DWARF 5 template parameters
+     * @brief Process DWARF 5 template parameters
      *
      * Extracts template parameter information for C++ template analysis.
      * Handles both type parameters and value parameters with their respective
@@ -1493,7 +1610,7 @@ private:
                                        bool is_type_parameter);
 
     /**
-     * @brief Phase 7.1B: Type resolution caching system
+     * @brief Type resolution caching system
      *
      * Retrieves cached type information to avoid redundant DWARF processing.
      * Implements time-based cache expiration and hit tracking.
@@ -1536,7 +1653,7 @@ private:
     void printTypeResolutionStats() const;
 
     // ========================================================================
-    // Phase 7.2: Interrupt Vector Table Analysis Methods
+    // Interrupt Vector Table Analysis Methods
     // ========================================================================
 
     /**
@@ -1743,7 +1860,7 @@ private:
      * Output: return "uint8_t[64]"
      * ```
      */
-    // parseArrayType moved to dwarf/DwarfTypeResolver (Phase 3, Task 3.1)
+    // parseArrayType moved to dwarf/DwarfTypeResolver
 
     /**
      * @brief Extracts complete structure information from a DWARF structure DIE
@@ -1769,8 +1886,10 @@ private:
      *         }
      * ```
      */
-    void
-    extractStructureFromDie(Dwarf_Debug dbg, Dwarf_Die struct_die, const std::string& full_name);
+    void extractStructureFromDie(Dwarf_Debug dbg,
+                                 Dwarf_Die struct_die,
+                                 const std::string& full_name,
+                                 const std::string& linkage_name = "");
 
     // ========================================================================
     // Enhanced Symbol and Type Resolution Methods
@@ -1970,7 +2089,7 @@ private:
     // DWARF Member Extraction Methods (for proper parameter naming)
     // ========================================================================
 
-    #if HAVE_LIBDWARF
+#if HAVE_LIBDWARF
     /**
      * @brief Extract actual member names and offsets from DWARF information
      *
@@ -1980,7 +2099,8 @@ private:
      * @param type_name Name of the type to find members for
      * @return Vector of (member_name, member_offset) pairs
      */
-    std::vector<std::pair<std::string, uint32_t>> extractDwarfMembers(const std::string& type_name) const;
+    std::vector<std::pair<std::string, uint32_t>>
+    extractDwarfMembers(const std::string& type_name) const;
 
     /**
      * @brief Find a type DIE by name in DWARF information
@@ -1992,7 +2112,8 @@ private:
      * @param type_die Output parameter for found type DIE
      * @return true if type found, false otherwise
      */
-    bool findDwarfTypeByName(Dwarf_Debug dbg, const std::string& type_name, Dwarf_Die& type_die) const;
+    bool
+    findDwarfTypeByName(Dwarf_Debug dbg, const std::string& type_name, Dwarf_Die& type_die) const;
 
     /**
      * @brief Search for a type within a specific compilation unit
@@ -2003,7 +2124,10 @@ private:
      * @param type_die Output parameter for found type DIE
      * @return true if type found, false otherwise
      */
-    bool searchForTypeInCU(Dwarf_Debug dbg, Dwarf_Die cu_die, const std::string& type_name, Dwarf_Die& type_die) const;
+    bool searchForTypeInCU(Dwarf_Debug dbg,
+                           Dwarf_Die cu_die,
+                           const std::string& type_name,
+                           Dwarf_Die& type_die) const;
 
     /**
      * @brief Check if a DIE matches the target type name
@@ -2014,7 +2138,11 @@ private:
      * @param found_die Output parameter for matching DIE
      * @return true if DIE matches, false otherwise
      */
-    bool isMatchingTypeDie(Dwarf_Debug dbg, Dwarf_Die die, const std::string& type_name, Dwarf_Die& found_die) const;
+    bool isMatchingTypeDie(Dwarf_Debug dbg,
+                           Dwarf_Die die,
+                           const std::string& type_name,
+                           Dwarf_Die& found_die) const;
+    bool isBasicType(const std::string& type_name) const;
 
     /**
      * @brief Extract member information from a type DIE
@@ -2023,8 +2151,10 @@ private:
      * @param type_die Type DIE to extract members from
      * @param members Output vector to populate with (name, offset) pairs
      */
-    void extractMembersFromDwarfDie(Dwarf_Debug dbg, Dwarf_Die type_die, std::vector<std::pair<std::string, uint32_t>>& members) const;
-    #endif // HAVE_LIBDWARF
+    void extractMembersFromDwarfDie(Dwarf_Debug dbg,
+                                    Dwarf_Die type_die,
+                                    std::vector<std::pair<std::string, uint32_t>>& members) const;
+#endif  // HAVE_LIBDWARF
 
     /**
      * @brief Extract generic parameter names as fallback when DWARF extraction fails
@@ -2036,7 +2166,9 @@ private:
      * @param struct_address Address of the structure in memory
      * @param members Output vector to populate with MemberInfo objects
      */
-    void extractGenericParameters(const std::string& base_name, uint64_t struct_address, std::vector<MemberInfo>& members) const;
+    void extractGenericParameters(const std::string& base_name,
+                                  uint64_t struct_address,
+                                  std::vector<MemberInfo>& members) const;
 
     /**
      * @brief Get actual member names and offsets from existing DWARF type information
@@ -2047,9 +2179,10 @@ private:
      * @param type_name Name of the type to find members for
      * @return Vector of (member_name, member_offset) pairs
      */
-    std::vector<std::pair<std::string, uint32_t>> getActualMemberNames(const std::string& type_name) const;
+    std::vector<std::pair<std::string, uint32_t>>
+    getActualMemberNames(const std::string& type_name) const;
 
-    #if HAVE_LIBDWARF
+#if HAVE_LIBDWARF
     /**
      * @brief Direct DWARF member extraction for structures with incomplete type resolution
      *
@@ -2060,13 +2193,18 @@ private:
      * @param type_name Name of the type to find members for
      * @return Vector of (member_name, member_offset) pairs
      */
-    std::vector<std::pair<std::string, uint32_t>> extractDwarfMembersDirect(const std::string& type_name) const;
-    #endif // HAVE_LIBDWARF
+    std::vector<std::pair<std::string, uint32_t>>
+    extractDwarfMembersDirect(const std::string& type_name) const;
+#endif  // HAVE_LIBDWARF
 
     // Helper methods for enhanced member name resolution
     std::string resolveTypedefChain(const std::string& type_name) const;
-    std::vector<std::pair<std::string, uint32_t>> getMembersFromDwarfVariables(const std::string& underlying_type, std::optional<TypeInfo>& type_info) const;
-    std::vector<std::pair<std::string, uint32_t>> extractMembersFromTemplateChain(const std::string& template_type, std::optional<TypeInfo>& type_info) const;
+    std::vector<std::pair<std::string, uint32_t>>
+    getMembersFromDwarfVariables(const std::string& underlying_type,
+                                 std::optional<TypeInfo>& type_info) const;
+    std::vector<std::pair<std::string, uint32_t>>
+    extractMembersFromTemplateChain(const std::string& template_type,
+                                    std::optional<TypeInfo>& type_info) const;
 
     // ========================================================================
     // ELF Header Accessor Methods

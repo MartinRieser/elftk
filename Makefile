@@ -58,8 +58,8 @@ endif
 # Platform-specific settings
 ifeq ($(UNAME_S),Darwin)
     # macOS settings (Homebrew) - configurable via HOMEBREW_PREFIX
-    LDFLAGS = -L$(HOMEBREW_PREFIX)/lib -ldwarf
-    INCLUDES = -I$(HOMEBREW_PREFIX)/include/libdwarf-2
+    LDFLAGS = -L$(HOMEBREW_PREFIX)/lib -ldwarf -lelf
+    INCLUDES = -I$(HOMEBREW_PREFIX)/include/libdwarf-2 -I$(HOMEBREW_PREFIX)/include
 else ifeq ($(UNAME_S),Linux)
     # Linux settings - prioritize newer libdwarf installation
     LDFLAGS = -ldwarf

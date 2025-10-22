@@ -21,9 +21,10 @@ extern "C" {
 /**
  * @brief Required callback for arkku IHEX library (reading - not used in export)
  */
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - External library signature, cannot change
-ihex_bool_t
-ihex_data_read(struct ihex_state* ihex, ihex_record_type_t type, ihex_bool_t checksum_mismatch) {
+// External library signature, cannot change
+ihex_bool_t ihex_data_read(struct ihex_state* ihex,
+                           ihex_record_type_t type,  // NOLINT(bugprone-easily-swappable-parameters)
+                           ihex_bool_t checksum_mismatch) {
     (void)ihex;
     (void)type;
     (void)checksum_mismatch;

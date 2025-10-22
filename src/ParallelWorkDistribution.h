@@ -26,7 +26,7 @@ typedef struct Dwarf_Error_s* Dwarf_Error;
  * @file ParallelWorkDistribution.h
  * @brief Work distribution system for parallel DWARF and ELF processing
  *
- * This file implements the work distribution mechanism for Phase 2 multi-threading,
+ * This file implements the work distribution mechanism for multi-threading,
  * providing efficient task scheduling and workload balancing for parallel ELF analysis.
  *
  * Key Features:
@@ -37,7 +37,7 @@ typedef struct Dwarf_Error_s* Dwarf_Error;
  * - Dynamic load balancing based on task complexity
  *
  * @author ELF Symbol Reader Development Team
- * @date 2025 - Phase 2 Multi-threading Implementation
+ * @date 2025
  */
 
 /**

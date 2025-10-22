@@ -91,26 +91,26 @@ int main(int argc, char* argv[]) {
             std::cerr << "Warning: " << warning << '\n';
         }
 
-        // Phase 1 & 2 Enhancement: Extract additional symbols from ELF symbol table and sections
+        // Extract additional symbols from ELF symbol table and sections
         if (!config.functionsOnly && config.enableElfSymbolExtraction) {
             auto extractedSymbols = ElfSymbolExtractor::extractSymbols(config.inputFile);
             auto variables = ElfSymbolExtractor::getVariables(extractedSymbols);
             auto linkerSymbols = ElfSymbolExtractor::getLinkerSymbols(extractedSymbols);
 
-            // Phase 2: Extract section information and discover additional variables
+            // Extract section information and discover additional variables
             auto sections = ElfSymbolExtractor::extractSections(config.inputFile);
             auto memoryLayout = ElfSymbolExtractor::getMemoryLayout(config.inputFile);
             auto discoveredVars =
                 ElfSymbolExtractor::discoverSectionVariables(sections, extractedSymbols);
 
-            // Phase 3: Detect array bounds and enhance symbols with element count
+            // Detect array bounds and enhance symbols with element count
             auto enhancedSymbols =
                 ElfSymbolExtractor::detectArrayBounds(extractedSymbols, sections);
 
-            // Phase 3: Extract cross-reference symbols from relocation entries
+            // Extract cross-reference symbols from relocation entries
             auto xrefSymbols = ElfSymbolExtractor::extractCrossReferenceSymbols(config.inputFile);
 
-            // Phase 3: Extract weak symbols (interrupt handlers, default implementations) from
+            // Extract weak symbols (interrupt handlers, default implementations) from
             // enhanced symbols
             auto weakSymbols = ElfSymbolExtractor::getWeakSymbols(enhancedSymbols);
             auto enhancedVariables = ElfSymbolExtractor::getVariables(enhancedSymbols);

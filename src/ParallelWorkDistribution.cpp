@@ -16,12 +16,12 @@ ParallelWorkDistribution::~ParallelWorkDistribution() {
     shutdown();
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - parameters have distinct types and
-// meanings
-std::future<bool> ParallelWorkDistribution::submitCompilationUnit(const std::string& elf_filename,
-                                                                  Dwarf_Die cu_die,
-                                                                  uint64_t cu_offset,
-                                                                  uint32_t priority) {
+std::future<bool> ParallelWorkDistribution::submitCompilationUnit(
+    const std::string& elf_filename,
+    Dwarf_Die cu_die,
+    uint64_t cu_offset,  // NOLINT(bugprone-easily-swappable-parameters) - cu_offset and priority
+                         // have different types and meanings
+    uint32_t priority) {
     auto work = std::make_unique<WorkItem>(WorkItemType::COMPILATION_UNIT,
                                            next_work_id_.fetch_add(1),
                                            priority,
@@ -46,12 +46,12 @@ std::future<bool> ParallelWorkDistribution::submitCompilationUnit(const std::str
     });
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - parameters have distinct meanings:
-// start_index and count are size_t, priority is uint32_t, elf_filename is string
-std::future<bool> ParallelWorkDistribution::submitSymbolChunk(const std::string& elf_filename,
-                                                              size_t start_index,
-                                                              size_t count,
-                                                              uint32_t priority) {
+std::future<bool> ParallelWorkDistribution::submitSymbolChunk(
+    const std::string& elf_filename,
+    size_t start_index,  // NOLINT(bugprone-easily-swappable-parameters) - start_index, count, and
+                         // priority have different semantic meanings
+    size_t count,
+    uint32_t priority) {
     auto work = std::make_unique<WorkItem>(WorkItemType::SYMBOL_CHUNK,
                                            next_work_id_.fetch_add(1),
                                            priority,
@@ -76,13 +76,12 @@ std::future<bool> ParallelWorkDistribution::submitSymbolChunk(const std::string&
     });
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - parameters have distinct types and
-// meanings
-std::future<bool>
-ParallelWorkDistribution::submitStructureExpansion(const std::string& elf_filename,
-                                                   const std::string& structure_name,
-                                                   uint64_t base_address,
-                                                   uint32_t priority) {
+std::future<bool> ParallelWorkDistribution::submitStructureExpansion(
+    const std::string& elf_filename,
+    const std::string& structure_name,
+    uint64_t base_address,  // NOLINT(bugprone-easily-swappable-parameters) - base_address and
+                            // priority have different types and meanings
+    uint32_t priority) {
     auto work = std::make_unique<WorkItem>(WorkItemType::STRUCTURE_EXPANSION,
                                            next_work_id_.fetch_add(1),
                                            priority,

@@ -23,15 +23,16 @@
 #include "ElfReader.h"
 #include <cxxabi.h>
 #if HAVE_LIBDWARF
-#include <dwarf.h>
-#include <libdwarf.h>
-#include "DwarfRAII.h"
-#include "dwarf/DwarfTypeResolver.h"
+    #include <dwarf.h>
+    #include <libdwarf.h>
+    #include "DwarfRAII.h"
+    #include "dwarf/DwarfTypeResolver.h"
 #endif
 #include <fcntl.h>
 #include <unistd.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -56,14 +57,14 @@ bool DwarfInitializer::initialize(const std::string& filename, Dwarf_Debug& dbg)
 
     // Critical Implementation Note: libdwarf API varies significantly between versions
     // This conditional compilation handles the two major API variants in use
-#if defined(DW_LIBDWARF_VERSION_MAJOR) && (DW_LIBDWARF_VERSION_MAJOR >= 2) ||                      \
-    defined(__APPLE__) || (defined(_WIN32) && defined(__MINGW64__))
+    #if defined(DW_LIBDWARF_VERSION_MAJOR) && (DW_LIBDWARF_VERSION_MAJOR >= 2) ||                  \
+        defined(__APPLE__) || (defined(_WIN32) && defined(__MINGW64__))
     // libdwarf 2.x API or macOS/Windows with simplified API (8 parameters):
     // dwarf_init_path(filename, error_handler, error_arg, groupnumber,
     //                 errhand_arg, errhand, dbg, error)
     int ret = dwarf_init_path(
         filename.c_str(), nullptr, 0, DW_GROUPNUMBER_ANY, nullptr, nullptr, &dbg, &error);
-#else
+    #else
     // Older libdwarf API with extended parameters (12 parameters):
     // dwarf_init_path(filename, error_handler, error_arg, groupnumber, access,
     //                 init_fd, ftype, flags, dbg, pathsource, reserved, error)
@@ -79,7 +80,7 @@ bool DwarfInitializer::initialize(const std::string& filename, Dwarf_Debug& dbg)
                               0,
                               nullptr,
                               &error);
-#endif
+    #endif
 
     return (ret == DW_DLV_OK);
 }
@@ -91,17 +92,17 @@ void DwarfInitializer::cleanup(Dwarf_Debug dbg) {
     [[maybe_unused]] Dwarf_Error error = nullptr;
 
     // Handle API differences between libdwarf versions
-#if defined(DW_LIBDWARF_VERSION_MAJOR) && (DW_LIBDWARF_VERSION_MAJOR >= 2) ||                      \
-    defined(__APPLE__) || (defined(_WIN32) && defined(__MINGW64__))
+    #if defined(DW_LIBDWARF_VERSION_MAJOR) && (DW_LIBDWARF_VERSION_MAJOR >= 2) ||                  \
+        defined(__APPLE__) || (defined(_WIN32) && defined(__MINGW64__))
     // libdwarf 2.x API or macOS/Windows (1 parameter)
     dwarf_finish(dbg);
-#else
+    #else
     // Older libdwarf API (2 parameters)
     dwarf_finish(dbg, &error);
-#endif
+    #endif
 }
 
-#endif // HAVE_LIBDWARF
+#endif  // HAVE_LIBDWARF
 
 // ========================================================================
 // ElfReader Implementation
@@ -125,7 +126,7 @@ void ElfReader::initializeElfReader(const std::string& filename, const Config& c
             (file_access_->getStrategyName() == "Memory-mapped");
     }
 
-    // Initialize parallel processing infrastructure (Phase 2.2)
+    // Initialize parallel processing infrastructure
     initializeParallelProcessing();
 
     // Performance optimization: Reserve string interner capacity for large files with bounds
@@ -175,7 +176,7 @@ void ElfReader::initializeElfReader(const std::string& filename, const Config& c
 
     parseElfHeader();
 
-    // Initialize output generator (Phase 3, Task 3.1)
+    // Initialize output generator
     output_generator_ =
         std::make_unique<OutputGenerator>(is_32bit_, is_little_endian_, getEntryPoint());
 
@@ -211,7 +212,7 @@ ElfReader::ElfReader(const std::string& filename, const Config& config) {
 
 ElfReader::~ElfReader() {
     try {
-        // Shutdown parallel processing infrastructure first (Phase 2.2)
+        // Shutdown parallel processing infrastructure first
         shutdownParallelProcessing();
 
         // Explicitly clear DWARF-related containers to avoid use-after-free issues
@@ -235,7 +236,7 @@ ElfReader::ElfReader(const Config& config) {
 }
 
 void ElfReader::validateElfFile() {
-    // Use comprehensive ELF validation (Phase 1 safety improvement)
+    // Use comprehensive ELF validation
     memory_validator_ = std::make_unique<ElfReaderUtils::ElfMemoryValidator>(
         file_access_->data(), file_access_->size(), filename_);
 
@@ -316,7 +317,7 @@ void ElfReader::parseSectionHeaders() {
 void ElfReader::parseStringTables() {
     uint16_t shstrndx = getSectionNameIndex();
 
-    // Parse section header string table first with bounds checking (Phase 1 safety improvement)
+    // Parse section header string table first with bounds checking
     if (is_32bit_ && shstrndx < sections32_.size()) {
         const auto& shstrtab = sections32_[shstrndx];
         try {
@@ -357,7 +358,7 @@ void ElfReader::parseStringTables() {
         }
     }
 
-    // Parse all string tables with bounds checking (Phase 1 safety improvement)
+    // Parse all string tables with bounds checking
     if (is_32bit_) {
         for (size_t i = 0; i < sections32_.size(); ++i) {
             const auto& section = sections32_[i];
@@ -517,7 +518,7 @@ bool ElfReader::parseDwarfWithLibdwarf() {
             std::cout << "libdwarf parsing DWARF debug information...\n";
         }
 
-        // Phase 2.2: Use parallel or sequential compilation unit processing
+        // Use parallel or sequential compilation unit processing
         bool parsing_success;
         if (config_.enableParallelProcessing) {
             parsing_success = parseDwarfCompilationUnitsParallel(dbg);
@@ -628,7 +629,27 @@ void ElfReader::processDwarfDie(Dwarf_Debug dbg,
                 // Build fully qualified name with namespace context
                 std::string full_name =
                     namespace_prefix.empty() ? name : namespace_prefix + "::" + name;
-                extractStructureFromDie(dbg, die, full_name);
+
+                // Extract linkage_name (mangled C++ name) for unique type identification
+                // This solves the ambiguity problem where multiple classes have same-named nested
+                // types Example: Namespace1::MyType_t vs Namespace2::MyType_t both named "MyType_t"
+                // Linkage name: N10Namespace17MyType_tE vs N10Namespace27MyType_tE (UNIQUE!)
+                std::string linkage_name_str;
+                Dwarf_Attribute linkage_attr = nullptr;
+                int linkage_ret = dwarf_attr(die, DW_AT_linkage_name, &linkage_attr, &error);
+                if (linkage_ret == DW_DLV_OK) {
+                    char* linkage_name = nullptr;
+                    if (dwarf_formstring(linkage_attr, &linkage_name, &error) == DW_DLV_OK &&
+                        linkage_name) {
+                        linkage_name_str = linkage_name;
+                    }
+                    dwarf_dealloc(dbg, linkage_attr, DW_DLA_ATTR);
+                }
+
+                // Extract structure with BOTH qualified name and linkage name
+                // The TypeInfo will be stored in all three maps (types_, linkage_name_map_,
+                // qualified_name_map_)
+                extractStructureFromDie(dbg, die, full_name, linkage_name_str);
             }
             break;
         }
@@ -686,11 +707,114 @@ void ElfReader::processDwarfDie(Dwarf_Debug dbg,
     }
 }
 
-// Type resolution methods moved to dwarf/DwarfTypeResolver.cpp (Phase 3, Task 3.1)
+// Type resolution methods moved to dwarf/DwarfTypeResolver.cpp
+
+// ============================================================================
+// Type Reference Resolution with Linkage Names
+// ============================================================================
+
+ElfReader::TypeIdentifier ElfReader::resolveTypeIdentifier(Dwarf_Debug dbg,
+                                                           Dwarf_Die start_die) const {
+    TypeIdentifier result;
+    Dwarf_Error error = nullptr;
+    Dwarf_Die current_die = start_die;
+    bool need_dealloc = false;
+
+    // Follow type reference chain through const/typedef/pointer layers
+    for (int depth = 0; depth < 10; ++depth) {  // Prevent infinite loops
+        Dwarf_Attribute type_attr = nullptr;
+        if (dwarf_attr(current_die, DW_AT_type, &type_attr, &error) != DW_DLV_OK) {
+            break;  // No more type references
+        }
+
+        Dwarf_Off type_offset = 0;
+        if (dwarf_global_formref(type_attr, &type_offset, &error) != DW_DLV_OK) {
+            dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+            break;
+        }
+
+        if (need_dealloc) {
+            dwarf_dealloc_die(current_die);
+        }
+
+        if (dwarf_offdie_b(dbg, type_offset, 1, &current_die, &error) != DW_DLV_OK) {
+            dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+            break;
+        }
+        need_dealloc = true;
+        dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+
+        // Check if this is a structure/class (final type)
+        Dwarf_Half tag = 0;
+        if (dwarf_tag(current_die, &tag, &error) == DW_DLV_OK) {
+            if (tag == DW_TAG_structure_type || tag == DW_TAG_class_type) {
+                // Found the actual type! Extract linkage name (UNIQUE!)
+                Dwarf_Attribute linkage_attr = nullptr;
+                if (dwarf_attr(current_die, DW_AT_linkage_name, &linkage_attr, &error) ==
+                    DW_DLV_OK) {
+                    char* linkage_name = nullptr;
+                    if (dwarf_formstring(linkage_attr, &linkage_name, &error) == DW_DLV_OK &&
+                        linkage_name) {
+                        result.linkage_name = linkage_name;
+                    }
+                    dwarf_dealloc(dbg, linkage_attr, DW_DLA_ATTR);
+                }
+
+                // Also get qualified name as fallback (for C structs without linkage names)
+                result.qualified_name = DwarfTypeResolver::getDwarfDieName(dbg, current_die);
+
+                // Store DIE offset for direct access
+                dwarf_dieoffset(current_die, &result.die_offset, &error);
+                break;
+            }
+            // Otherwise continue following (might be const/typedef/volatile/etc.)
+        }
+    }
+
+    if (need_dealloc) {
+        dwarf_dealloc_die(current_die);
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Type Match Confidence Scoring
+// ============================================================================
+
+ElfReader::TypeMatchConfidence
+ElfReader::getTypeMatchConfidence(const std::string& type_name) const {
+    // Check linkage name first (100% confidence - UNIQUE!)
+    if (types_.hasTypeByLinkageName(type_name)) {
+        return TypeMatchConfidence::EXACT_LINKAGE_NAME;
+    }
+
+    // Check qualified name (90% confidence - usually unique)
+    if (types_.getTypeByQualifiedName(type_name).has_value()) {
+        return TypeMatchConfidence::EXACT_QUALIFIED_NAME;
+    }
+
+    // Check for DIE offset key (type@offset) (85% confidence - unique per CU)
+    if (type_name.find('@') != std::string::npos && types_.hasType(type_name)) {
+        return TypeMatchConfidence::EXACT_DIE_OFFSET;
+    }
+
+    // Check simple name - count how many types match
+    size_t match_count = types_.countSimpleNameMatches(type_name);
+
+    if (match_count == 0) {
+        return TypeMatchConfidence::NO_MATCH;
+    } else if (match_count == 1) {
+        return TypeMatchConfidence::SINGLE_SIMPLE_MATCH;  // Safe - only one match
+    } else {
+        return TypeMatchConfidence::AMBIGUOUS_NAME;  // DANGEROUS - multiple matches!
+    }
+}
 
 void ElfReader::extractStructureFromDie(Dwarf_Debug dbg,
                                         Dwarf_Die struct_die,
-                                        const std::string& full_name) {
+                                        const std::string& full_name,
+                                        const std::string& linkage_name) {
     std::vector<TypeMember> members;
 
     // Get DIE offset for unique identification
@@ -810,6 +934,15 @@ void ElfReader::extractStructureFromDie(Dwarf_Debug dbg,
                                      is_struct_type);
             }
         }
+        // Handle inline/nested structure or class definitions
+        else if (ret == DW_DLV_OK && (tag == DW_TAG_structure_type || tag == DW_TAG_class_type ||
+                                      tag == DW_TAG_union_type)) {
+            // Extract inline type definitions so they're available when members reference them
+            std::string nested_type_name = DwarfTypeResolver::getDwarfDieName(dbg, child_die);
+            if (!nested_type_name.empty()) {
+                extractStructureFromDie(dbg, child_die, nested_type_name);
+            }
+        }
         // Handle inheritance
         else if (ret == DW_DLV_OK && tag == DW_TAG_inheritance) {
             // Get base class type
@@ -864,25 +997,37 @@ void ElfReader::extractStructureFromDie(Dwarf_Debug dbg,
     }
 
     // Add to types map with unique key based on DIE offset
+    // Now includes linkage_name for unique type identification
     if (!members.empty() || byte_size > 0) {
         // Create unique key combining name and DIE offset
         std::string unique_key = full_name + "@" + std::to_string(die_offset);
-        types_.addType(
-            unique_key,
-            TypeInfo(byte_size, members, die_offset, string_interner_.intern(full_name)));
+        types_.addType(unique_key,
+                       TypeInfo(byte_size,
+                                members,
+                                die_offset,
+                                string_interner_.intern(full_name),
+                                linkage_name.empty() ? "" : string_interner_.intern(linkage_name)));
 
         // For anonymous structures (just "struct"), always use unique key
         // For named structures, also store with original name if not already present
         if (full_name != "struct" && !types_.hasType(full_name)) {
             types_.addType(
                 full_name,
-                TypeInfo(byte_size, members, die_offset, string_interner_.intern(full_name)));
+                TypeInfo(byte_size,
+                         members,
+                         die_offset,
+                         string_interner_.intern(full_name),
+                         linkage_name.empty() ? "" : string_interner_.intern(linkage_name)));
         }
 
         if (config_.verbosity > 1) {
             std::cout << "Extracted structure: " << full_name << " (size: " << byte_size
                       << ", members: " << members.size() << ", DIE: 0x" << std::hex << die_offset
-                      << std::dec << ")\n";
+                      << std::dec;
+            if (!linkage_name.empty()) {
+                std::cout << ", linkage: " << linkage_name;
+            }
+            std::cout << ")\n";
 
             // Debug: Print member details
             for (const auto& member : members) {
@@ -900,8 +1045,36 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
 
     // Get variable name
     std::string var_name = DwarfTypeResolver::getDwarfDieName(dbg, var_die);
+
+    // If no name, check if this DIE has a specification reference (common for C++ definitions)
+    if (var_name.empty()) {
+        Dwarf_Attribute spec_attr = nullptr;
+        int spec_ret = dwarf_attr(var_die, DW_AT_specification, &spec_attr, &error);
+        if (spec_ret == DW_DLV_OK) {
+            // Follow the specification to get the name from the declaration
+            Dwarf_Off spec_offset = 0;
+            spec_ret = dwarf_global_formref(spec_attr, &spec_offset, &error);
+            if (spec_ret == DW_DLV_OK) {
+                Dwarf_Die spec_die = nullptr;
+                spec_ret = dwarf_offdie_b(dbg, spec_offset, 1, &spec_die, &error);
+                if (spec_ret == DW_DLV_OK) {
+                    var_name = DwarfTypeResolver::getDwarfDieName(dbg, spec_die);
+                    dwarf_dealloc_die(spec_die);
+                }
+            }
+            dwarf_dealloc(dbg, spec_attr, DW_DLA_ATTR);
+        }
+    }
+
     if (var_name.empty()) {
         return;  // Skip unnamed variables
+    }
+
+    // Filter out ARM/Thumb mapping symbols when showing constants
+    // These are not real constants: $a (ARM code), $t (Thumb code), $d (data)
+    if (config_.constantsOnly && var_name.length() >= 2 && var_name[0] == '$' &&
+        (var_name[1] == 'a' || var_name[1] == 't' || var_name[1] == 'd')) {
+        return;  // Skip ARM mapping symbols
     }
 
     // Get variable address from location attribute
@@ -957,13 +1130,13 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
         }
 
         if (loc_head) {
-// Handle different deallocation functions between libdwarf versions
-#ifdef dwarf_dealloc_loc_head_c
+    // Handle different deallocation functions between libdwarf versions
+    #ifdef dwarf_dealloc_loc_head_c
             dwarf_dealloc_loc_head_c(loc_head);
-#else
+    #else
             // Fallback for older versions
             dwarf_dealloc(dbg, loc_head, DW_DLA_LOC_BLOCK);
-#endif
+    #endif
         }
         dwarf_dealloc(dbg, location_attr, DW_DLA_ATTR);
     }
@@ -1010,6 +1183,97 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
     bool is_constant = false;
     std::string constant_value;
 
+    // FIRST: Check for DW_AT_const_value directly on the variable DIE
+    // This handles constexpr variables, enum constants, and inline constants
+    Dwarf_Attribute const_attr = nullptr;
+    int const_ret = dwarf_attr(var_die, DW_AT_const_value, &const_attr, &error);
+
+    // If const_value not found, check if this DIE has a specification reference
+    // (common for constexpr variables where declaration and definition are separate)
+    if (const_ret != DW_DLV_OK) {
+        Dwarf_Attribute spec_attr = nullptr;
+        int spec_ret = dwarf_attr(var_die, DW_AT_specification, &spec_attr, &error);
+        if (spec_ret == DW_DLV_OK) {
+            // Follow the specification reference to find the declaration
+            Dwarf_Off spec_offset = 0;
+            spec_ret = dwarf_global_formref(spec_attr, &spec_offset, &error);
+            if (spec_ret == DW_DLV_OK) {
+                Dwarf_Die spec_die = nullptr;
+                spec_ret = dwarf_offdie_b(dbg, spec_offset, 1, &spec_die, &error);
+                if (spec_ret == DW_DLV_OK) {
+                    // Try to get const_value from the specification DIE
+                    const_ret = dwarf_attr(spec_die, DW_AT_const_value, &const_attr, &error);
+                    dwarf_dealloc_die(spec_die);
+                }
+            }
+            dwarf_dealloc(dbg, spec_attr, DW_DLA_ATTR);
+        }
+    }
+
+    if (const_ret == DW_DLV_OK) {
+        is_constant = true;  // Has const_value means it's a constant
+        Dwarf_Half form = 0;
+        const_ret = dwarf_whatform(const_attr, &form, &error);
+        if (const_ret == DW_DLV_OK) {
+            if (form == DW_FORM_data1 || form == DW_FORM_data2 || form == DW_FORM_data4 ||
+                form == DW_FORM_data8) {
+                Dwarf_Unsigned uval = 0;
+                const_ret = dwarf_formudata(const_attr, &uval, &error);
+                if (const_ret == DW_DLV_OK) {
+                    constant_value = std::to_string(uval);
+                }
+            } else if (form == DW_FORM_sdata) {
+                Dwarf_Signed sval = 0;
+                const_ret = dwarf_formsdata(const_attr, &sval, &error);
+                if (const_ret == DW_DLV_OK) {
+                    constant_value = std::to_string(sval);
+                }
+            } else if (form == DW_FORM_string || form == DW_FORM_strp) {
+                char* str_val = nullptr;
+                const_ret = dwarf_formstring(const_attr, &str_val, &error);
+                if (const_ret == DW_DLV_OK && str_val) {
+                    constant_value = "\"" + std::string(str_val) + "\"";
+                }
+            } else if (form == DW_FORM_block1 || form == DW_FORM_block2 || form == DW_FORM_block4 ||
+                       form == DW_FORM_block) {
+                // Handle block form (used for float/double constants)
+                Dwarf_Block* block_ptr = nullptr;
+                const_ret = dwarf_formblock(const_attr, &block_ptr, &error);
+                if (const_ret == DW_DLV_OK && block_ptr) {
+                    // Interpret block as IEEE 754 float or double based on size
+                    if (block_ptr->bl_len == 4) {
+                        // 32-bit float
+                        float fval;
+                        memcpy(&fval, block_ptr->bl_data, 4);
+                        std::ostringstream oss;
+                        oss << std::fixed << std::setprecision(6) << fval << "f";
+                        constant_value = oss.str();
+                    } else if (block_ptr->bl_len == 8) {
+                        // 64-bit double
+                        double dval;
+                        memcpy(&dval, block_ptr->bl_data, 8);
+                        std::ostringstream oss;
+                        oss << std::fixed << std::setprecision(15) << dval;
+                        constant_value = oss.str();
+                    } else {
+                        // Unknown block size - show as hex
+                        std::ostringstream oss;
+                        oss << "0x";
+                        const unsigned char* data =
+                            static_cast<const unsigned char*>(block_ptr->bl_data);
+                        for (Dwarf_Unsigned i = 0; i < block_ptr->bl_len; ++i) {
+                            oss << std::hex << std::setw(2) << std::setfill('0')
+                                << static_cast<unsigned int>(data[i]);
+                        }
+                        constant_value = oss.str();
+                    }
+                    dwarf_dealloc(dbg, block_ptr, DW_DLA_BLOCK);
+                }
+            }
+        }
+        dwarf_dealloc(dbg, const_attr, DW_DLA_ATTR);
+    }
+
     ret = dwarf_attr(var_die, DW_AT_type, &type_attr, &error);
     if (ret == DW_DLV_OK) {
         Dwarf_Off type_offset = 0;
@@ -1024,38 +1288,6 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
                 if (ret == DW_DLV_OK && tag == DW_TAG_const_type) {
                     is_constant = true;
 
-                    // First try to get the constant value directly from DW_AT_const_value on the
-                    // variable DIE
-                    Dwarf_Attribute const_attr = nullptr;
-                    int const_ret = dwarf_attr(var_die, DW_AT_const_value, &const_attr, &error);
-                    if (const_ret == DW_DLV_OK) {
-                        Dwarf_Half form = 0;
-                        const_ret = dwarf_whatform(const_attr, &form, &error);
-                        if (const_ret == DW_DLV_OK) {
-                            if (form == DW_FORM_data1 || form == DW_FORM_data2 ||
-                                form == DW_FORM_data4 || form == DW_FORM_data8) {
-                                Dwarf_Unsigned uval = 0;
-                                const_ret = dwarf_formudata(const_attr, &uval, &error);
-                                if (const_ret == DW_DLV_OK) {
-                                    constant_value = std::to_string(uval);
-                                }
-                            } else if (form == DW_FORM_sdata) {
-                                Dwarf_Signed sval = 0;
-                                const_ret = dwarf_formsdata(const_attr, &sval, &error);
-                                if (const_ret == DW_DLV_OK) {
-                                    constant_value = std::to_string(sval);
-                                }
-                            } else if (form == DW_FORM_string || form == DW_FORM_strp) {
-                                char* str_val = nullptr;
-                                const_ret = dwarf_formstring(const_attr, &str_val, &error);
-                                if (const_ret == DW_DLV_OK && str_val) {
-                                    constant_value = "\"" + std::string(str_val) + "\"";
-                                }
-                            }
-                        }
-                        dwarf_dealloc(dbg, const_attr, DW_DLA_ATTR);
-                    }
-
                     // If we didn't get a value from DW_AT_const_value, try reading from memory
                     if (constant_value.empty()) {
                         // Get the underlying type to determine size and encoding
@@ -1069,24 +1301,62 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
                                 ret = dwarf_offdie_b(
                                     dbg, base_type_offset, 1, &base_type_die, &error);
                                 if (ret == DW_DLV_OK) {
-                                    // Get byte size from the base type
-                                    Dwarf_Attribute byte_size_attr = nullptr;
-                                    ret = dwarf_attr(
-                                        base_type_die, DW_AT_byte_size, &byte_size_attr, &error);
-                                    if (ret == DW_DLV_OK) {
-                                        Dwarf_Unsigned byte_size = 0;
-                                        ret = dwarf_formudata(byte_size_attr, &byte_size, &error);
-                                        if (ret == DW_DLV_OK && (has_address || address > 0)) {
-                                            // Try to read the actual constant value from memory
-                                            // (be more aggressive - many constants are in .rodata)
+                                    // Check if the base type is an enumeration
+                                    Dwarf_Half base_tag = 0;
+                                    ret = dwarf_tag(base_type_die, &base_tag, &error);
+
+                                    if (ret == DW_DLV_OK && base_tag == DW_TAG_enumeration_type) {
+                                        // For enum constants, get the enum's underlying type size
+                                        Dwarf_Attribute enum_byte_size_attr = nullptr;
+                                        ret = dwarf_attr(base_type_die,
+                                                         DW_AT_byte_size,
+                                                         &enum_byte_size_attr,
+                                                         &error);
+                                        if (ret == DW_DLV_OK) {
+                                            Dwarf_Unsigned byte_size = 0;
+                                            ret = dwarf_formudata(
+                                                enum_byte_size_attr, &byte_size, &error);
+                                            if (ret == DW_DLV_OK && has_address && address > 0) {
+                                                // Read enum value as integer from memory
+                                                constant_value = readConstantValueFromAddress(
+                                                    dbg, address, byte_size, base_type_die);
+                                            }
+                                            dwarf_dealloc(dbg, enum_byte_size_attr, DW_DLA_ATTR);
+                                        }
+                                    } else if (ret == DW_DLV_OK &&
+                                               base_tag == DW_TAG_pointer_type) {
+                                        // For pointer constants (e.g., const char*)
+                                        // Read the pointer value first, then try to dereference for
+                                        // strings
+                                        if (has_address && address > 0) {
+                                            size_t ptr_size = is_32bit_ ? 4 : 8;
                                             constant_value = readConstantValueFromAddress(
-                                                dbg, address, byte_size, base_type_die);
+                                                dbg, address, ptr_size, base_type_die);
+                                        }
+                                    } else {
+                                        // For other types, get byte size from the base type
+                                        Dwarf_Attribute byte_size_attr = nullptr;
+                                        ret = dwarf_attr(base_type_die,
+                                                         DW_AT_byte_size,
+                                                         &byte_size_attr,
+                                                         &error);
+                                        if (ret == DW_DLV_OK) {
+                                            Dwarf_Unsigned byte_size = 0;
+                                            ret =
+                                                dwarf_formudata(byte_size_attr, &byte_size, &error);
+                                            if (ret == DW_DLV_OK && (has_address || address > 0)) {
+                                                // Try to read the actual constant value from memory
+                                                // (be more aggressive - many constants are in
+                                                // .rodata)
+                                                constant_value = readConstantValueFromAddress(
+                                                    dbg, address, byte_size, base_type_die);
+                                            } else {
+                                                constant_value = "(const)";
+                                            }
+                                            dwarf_dealloc(dbg, byte_size_attr, DW_DLA_ATTR);
                                         } else {
                                             constant_value = "(const)";
                                         }
-                                        dwarf_dealloc(dbg, byte_size_attr, DW_DLA_ATTR);
-                                    } else {
-                                        constant_value = "(const)";
                                     }
                                     dwarf_dealloc_die(base_type_die);
                                 }
@@ -1095,24 +1365,30 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
                         }
 
                         if (constant_value.empty() || constant_value == "(const)") {
-                            // One more attempt: try reading with estimated size for addressed variables
+                            // One more attempt: try reading with estimated size for addressed
+                            // variables
                             if (has_address && address > 0) {
                                 // Use default sizes based on common types
-                                size_t estimated_size = 4; // Default to 4 bytes
-                                std::string type_name = DwarfTypeResolver::getDwarfDieName(dbg, type_die);
+                                size_t estimated_size = 4;  // Default to 4 bytes
+                                std::string type_name =
+                                    DwarfTypeResolver::getDwarfDieName(dbg, type_die);
 
                                 // Estimate size from type name
-                                if (type_name.find("int64") != std::string::npos || type_name.find("double") != std::string::npos) {
+                                if (type_name.find("int64") != std::string::npos ||
+                                    type_name.find("double") != std::string::npos) {
                                     estimated_size = 8;
-                                } else if (type_name.find("int16") != std::string::npos || type_name.find("short") != std::string::npos) {
+                                } else if (type_name.find("int16") != std::string::npos ||
+                                           type_name.find("short") != std::string::npos) {
                                     estimated_size = 2;
-                                } else if (type_name.find("int8") != std::string::npos || type_name.find("char") != std::string::npos) {
+                                } else if (type_name.find("int8") != std::string::npos ||
+                                           type_name.find("char") != std::string::npos) {
                                     estimated_size = 1;
                                 } else if (type_name.find("float") != std::string::npos) {
                                     estimated_size = 4;
                                 }
 
-                                constant_value = readConstantValueFromAddress(dbg, address, estimated_size, type_die);
+                                constant_value = readConstantValueFromAddress(
+                                    dbg, address, estimated_size, type_die);
                             } else {
                                 constant_value = "(const)";
                             }
@@ -1120,7 +1396,20 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
                     }
                 }
 
-                type_name = DwarfTypeResolver::resolveDwarfType(dbg, type_die);
+                // Use linkage-based type resolution for unique identification
+                TypeIdentifier type_id = resolveTypeIdentifier(dbg, var_die);
+
+                // Store linkage name (unique!) or qualified name (fallback) for type lookup
+                // This ensures correct type resolution even when multiple types have same simple
+                // name
+                if (!type_id.linkage_name.empty()) {
+                    type_name = type_id.linkage_name;  // C++ type with unique mangled name
+                } else if (!type_id.qualified_name.empty()) {
+                    type_name = type_id.qualified_name;  // Qualified name fallback
+                } else {
+                    type_name = DwarfTypeResolver::resolveDwarfType(dbg, type_die);  // Last resort
+                }
+
                 dwarf_dealloc_die(type_die);
             }
         }
@@ -1261,12 +1550,13 @@ ElfReader::extractConstantValueFromMemory(Dwarf_Debug dbg, Dwarf_Die type_die, u
     return readConstantValueFromAddress(dbg, address, byte_size, type_die);
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - address and byte_size have distinct
-// semantic meanings: address is memory location, byte_size is amount of data to read
-std::string ElfReader::readConstantValueFromAddress(Dwarf_Debug dbg,
-                                                    uint64_t address,
-                                                    uint64_t byte_size,
-                                                    Dwarf_Die type_die) {
+// address and byte_size have distinct semantic meanings: address is memory location, byte_size is
+// amount of data to read
+std::string ElfReader::readConstantValueFromAddress(
+    Dwarf_Debug dbg,
+    uint64_t address,  // NOLINT(bugprone-easily-swappable-parameters)
+    uint64_t byte_size,
+    Dwarf_Die type_die) {
     try {
         // Find the section that contains this address
         size_t file_offset = 0;
@@ -1507,7 +1797,7 @@ std::string ElfReader::readStringFromAddress(uint64_t address) {
             return "";  // Address not found in any section
         }
 
-        // Use memory validator for comprehensive bounds checking (Phase 1 safety improvement)
+        // Use memory validator for comprehensive bounds checking
         if (file_offset >= memory_validator_->getSize()) {
             return "";
         }
@@ -1559,13 +1849,14 @@ std::string ElfReader::readMemoryAtAddress(uint64_t address, uint64_t size) cons
             for (size_t i = 0; i < sections32_.size(); ++i) {
                 const auto& section = sections32_[i];
                 if (address >= section.sh_addr &&
-                    address + size <= section.sh_addr + section.sh_size &&
-                    section.sh_addr != 0) {
+                    address + size <= section.sh_addr + section.sh_size && section.sh_addr != 0) {
                     uint64_t section_offset = address - section.sh_addr;
                     std::vector<uint8_t> section_data;
                     if (readSectionData(static_cast<uint16_t>(i), section_data)) {
                         if (section_offset + size <= section_data.size()) {
-                            result.assign(reinterpret_cast<const char*>(section_data.data() + section_offset), size);
+                            result.assign(
+                                reinterpret_cast<const char*>(section_data.data() + section_offset),
+                                size);
                         }
                     }
                     break;
@@ -1575,27 +1866,25 @@ std::string ElfReader::readMemoryAtAddress(uint64_t address, uint64_t size) cons
             for (size_t i = 0; i < sections64_.size(); ++i) {
                 const auto& section = sections64_[i];
                 if (address >= section.sh_addr &&
-                    address + size <= section.sh_addr + section.sh_size &&
-                    section.sh_addr != 0) {
+                    address + size <= section.sh_addr + section.sh_size && section.sh_addr != 0) {
                     uint64_t section_offset = address - section.sh_addr;
                     std::vector<uint8_t> section_data;
                     if (readSectionData(static_cast<uint16_t>(i), section_data)) {
                         if (section_offset + size <= section_data.size()) {
-                            result.assign(reinterpret_cast<const char*>(section_data.data() + section_offset), size);
+                            result.assign(
+                                reinterpret_cast<const char*>(section_data.data() + section_offset),
+                                size);
                         }
                     }
                     break;
                 }
             }
         }
-    } catch (const std::exception&) {
-        // Return empty string on error
+    } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch)
+        // Return empty string on error - intentionally swallow exceptions
     }
     return result;
 }
-
-
-
 
 // LEGACY: Keep old implementation for now
 bool ElfReader::parseDwarfInfo() {
@@ -1868,7 +2157,7 @@ void ElfReader::processDwarfTemplateParameter(Dwarf_Debug dbg,
     }
 }
 
-#endif // HAVE_LIBDWARF
+#endif  // HAVE_LIBDWARF
 
 std::string ElfReader::getCleanSymbolName(const std::string& symbol_name) const {
     // First try to demangle if it's a C++ mangled name
@@ -1882,7 +2171,7 @@ std::string ElfReader::getCleanSymbolName(const std::string& symbol_name) const 
 }
 
 std::string ElfReader::demangleCppName(const std::string& mangled_name) const {
-    // Phase 3, Task 3.4: Check cache first to avoid expensive demangling
+    // Check cache first to avoid expensive demangling
     auto it = demangled_cache_.find(mangled_name);
     if (it != demangled_cache_.end()) {
         return it->second;
@@ -1913,22 +2202,22 @@ std::string ElfReader::demangleCppName(const std::string& mangled_name) const {
 }
 
 std::string ElfReader::findTypeForSymbol(const std::string& symbol_name) const {
-    // First check if we have DWARF variable information for this symbol
-    #if HAVE_LIBDWARF
+// First check if we have DWARF variable information for this symbol
+#if HAVE_LIBDWARF
     auto var_it = dwarf_variables_.find(symbol_name);
     if (var_it != dwarf_variables_.end()) {
         return var_it->second.type_name;
     }
-    #endif // HAVE_LIBDWARF
+#endif  // HAVE_LIBDWARF
 
     // Try with demangled name
     std::string clean_name = getCleanSymbolName(symbol_name);
-    #if HAVE_LIBDWARF
+#if HAVE_LIBDWARF
     auto var_clean_it = dwarf_variables_.find(clean_name);
     if (var_clean_it != dwarf_variables_.end()) {
         return var_clean_it->second.type_name;
     }
-    #endif // HAVE_LIBDWARF
+#endif  // HAVE_LIBDWARF
 
     // Legacy hardcoded logic for globalInstance (backward compatibility)
     if (symbol_name == "globalInstance" || clean_name == "globalInstance") {
@@ -1996,7 +2285,8 @@ void ElfReader::extractTypesFromDwarf(const DwarfDIE& die, const std::string& na
 // Simple fallback type size estimator when libdwarf is not available
 uint64_t ElfReader::estimateTypeSizeFallback(const std::string& type_name) const {
     // Simple heuristic based on type name patterns
-    if (type_name.empty()) return 4;
+    if (type_name.empty())
+        return 4;
 
     if (type_name.find("int64") != std::string::npos ||
         type_name.find("uint64") != std::string::npos ||
@@ -2049,6 +2339,7 @@ void ElfReader::processDwarfClass(const DwarfDIE& class_die, const std::string& 
             // Resolve type name from type offset
             std::string type_name = "auto";  // Default fallback
             uint32_t member_size = 4;        // Default size
+            bool is_struct_member = false;   // Track if this member is a struct/class type
 
             if (member_type_offset != 0) {
                 // Try to find the type DIE by offset in our cached DIEs
@@ -2062,6 +2353,43 @@ void ElfReader::processDwarfClass(const DwarfDIE& class_die, const std::string& 
                             member_size = estimateTypeSizeFallback(type_name);
                         }
                     }
+
+                    // Check if this member's type is a struct or class
+                    // Need to follow type references (typedef, const, etc.) to find the actual type
+                    uint32_t actual_type_tag = type_die.tag;
+                    Dwarf_Off check_offset = member_type_offset;
+
+                    // Follow type chain to find the ultimate type (handle typedef, const, etc.)
+                    for (int depth = 0; depth < 10;
+                         ++depth) {  // Limit depth to prevent infinite loops
+                        auto check_it = dwarf_dies_.find(check_offset);
+                        if (check_it == dwarf_dies_.end())
+                            break;
+
+                        const auto& check_die = check_it->second;
+                        actual_type_tag = check_die.tag;
+
+                        // If this is a typedef, const, volatile, etc., follow to the underlying
+                        // type
+                        if (actual_type_tag == static_cast<uint32_t>(DW_TAG_typedef) ||
+                            actual_type_tag == static_cast<uint32_t>(DW_TAG_const_type) ||
+                            actual_type_tag == static_cast<uint32_t>(DW_TAG_volatile_type) ||
+                            actual_type_tag == static_cast<uint32_t>(DW_TAG_restrict_type)) {
+                            check_offset = check_die.getType();
+                            if (check_offset == 0)
+                                break;
+                        } else {
+                            // Found the actual type
+                            break;
+                        }
+                    }
+
+                    // Mark as struct if the actual type is a structure or class
+                    if (actual_type_tag == static_cast<uint32_t>(DW_TAG_structure_type) ||
+                        actual_type_tag == static_cast<uint32_t>(DW_TAG_class_type) ||
+                        actual_type_tag == static_cast<uint32_t>(DW_TAG_union_type)) {
+                        is_struct_member = true;
+                    }
                 }
             }
 
@@ -2069,7 +2397,7 @@ void ElfReader::processDwarfClass(const DwarfDIE& class_die, const std::string& 
                                  string_interner_.intern(type_name),
                                  member_offset,
                                  member_size,
-                                 false);
+                                 is_struct_member);
         }
     }
 
@@ -2081,9 +2409,10 @@ void ElfReader::processDwarfStructure(const DwarfDIE& struct_die, const std::str
     processDwarfClass(struct_die, full_name);
 }
 
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters) - strtab_index and offset have distinct
-// semantic meanings
-std::string ElfReader::getString(uint32_t strtab_index, uint32_t offset) const {
+// strtab_index and offset have distinct semantic meanings
+std::string
+ElfReader::getString(uint32_t strtab_index,  // NOLINT(bugprone-easily-swappable-parameters)
+                     uint32_t offset) const {
     auto it = string_tables_.find(strtab_index);
     if (it != string_tables_.end()) {
         const auto& strtab = it->second;
@@ -2116,23 +2445,40 @@ std::string ElfReader::getGenericParamName(size_t param_index) const {
     // Generic parameter names based on common embedded control patterns
     // These work for any structure regardless of naming convention
     switch (param_index) {
-        case 0: return "parameter_0";         // First parameter
-        case 1: return "parameter_1";         // Second parameter
-        case 2: return "parameter_2";         // Third parameter
-        case 3: return "parameter_3";         // Fourth parameter
-        case 4: return "parameter_4";         // Fifth parameter
-        case 5: return "parameter_5";         // Sixth parameter
-        case 6: return "parameter_6";         // Seventh parameter
-        case 7: return "parameter_7";         // Eighth parameter
-        case 8: return "parameter_8";         // Ninth parameter
-        case 9: return "parameter_9";         // Tenth parameter
-        case 10: return "parameter_10";       // Eleventh parameter
-        case 11: return "parameter_11";       // Twelfth parameter
-        case 12: return "parameter_12";       // Thirteenth parameter
-        case 13: return "parameter_13";       // Fourteenth parameter
-        case 14: return "parameter_14";       // Fifteenth parameter
-        case 15: return "parameter_15";       // Sixteenth parameter
-        default: return "parameter_" + std::to_string(param_index);  // General case
+        case 0:
+            return "parameter_0";  // First parameter
+        case 1:
+            return "parameter_1";  // Second parameter
+        case 2:
+            return "parameter_2";  // Third parameter
+        case 3:
+            return "parameter_3";  // Fourth parameter
+        case 4:
+            return "parameter_4";  // Fifth parameter
+        case 5:
+            return "parameter_5";  // Sixth parameter
+        case 6:
+            return "parameter_6";  // Seventh parameter
+        case 7:
+            return "parameter_7";  // Eighth parameter
+        case 8:
+            return "parameter_8";  // Ninth parameter
+        case 9:
+            return "parameter_9";  // Tenth parameter
+        case 10:
+            return "parameter_10";  // Eleventh parameter
+        case 11:
+            return "parameter_11";  // Twelfth parameter
+        case 12:
+            return "parameter_12";  // Thirteenth parameter
+        case 13:
+            return "parameter_13";  // Fourteenth parameter
+        case 14:
+            return "parameter_14";  // Fifteenth parameter
+        case 15:
+            return "parameter_15";  // Sixteenth parameter
+        default:
+            return "parameter_" + std::to_string(param_index);  // General case
     }
 }
 
@@ -2142,10 +2488,47 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
                                                           uint32_t offset) const {
     std::vector<MemberInfo> members;
 
-  auto type_info = types_.getType(type_name);
+    // Try linkage-based lookup first (most reliable)
+    auto type_info = types_.getTypeByLinkageName(type_name);
+
+    // Fallback to qualified name lookup (for C structs without linkage names)
+    if (!type_info.has_value()) {
+        type_info = types_.getTypeByQualifiedName(type_name);
+    }
+
+    // Last resort: simple name lookup (backward compatibility)
+    if (!type_info.has_value()) {
+        type_info = types_.getType(type_name);
+    }
+
+    // Enforce strict matching in constants mode
+    // Check confidence level - reject ambiguous matches to prevent wrong constant values
+    if (config_.constantsOnly && type_info.has_value()) {
+        TypeMatchConfidence confidence = getTypeMatchConfidence(type_name);
+
+        // Only allow high-confidence matches in constants mode
+        if (confidence == TypeMatchConfidence::AMBIGUOUS_NAME) {
+            // DON'T expand with ambiguous type - better to show no members than WRONG members!
+            if (config_.verbosity > 0) {
+                std::cerr << "Warning: Skipping ambiguous type expansion for '" << type_name
+                          << "' in constants mode (multiple types with same name)" << std::endl;
+            }
+
+            // Return single unexpanded member instead of wrong members
+            MemberInfo base_member(string_interner_.intern(base_name),
+                                   base_address + offset,
+                                   string_interner_.intern(type_name));
+            if (config_.showSections) {
+                base_member.section_name = getSectionNameForAddress(base_address + offset);
+            }
+            members.push_back(base_member);
+            return members;
+        }
+    }
 
     // If direct lookup fails, try improved resolution strategy
-    if (!type_info.has_value()) {
+    // BUT: In constants mode, be very strict to avoid expanding with wrong type
+    if (!type_info.has_value() && !config_.constantsOnly) {
         // Strategy 1: Look for unique DIE-based key (type_name@offset)
         auto all_type_names = types_.getAllTypeNames();
         for (const auto& key : all_type_names) {
@@ -2163,7 +2546,8 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
         // Strategy 2: Try case-insensitive matching for ParaInit_t vs paraInit_t
         if (!type_info.has_value()) {
             std::string lower_type_name = type_name;
-            std::transform(lower_type_name.begin(), lower_type_name.end(), lower_type_name.begin(), ::tolower);
+            std::transform(
+                lower_type_name.begin(), lower_type_name.end(), lower_type_name.begin(), ::tolower);
 
             for (const auto& key : all_type_names) {
                 std::string lower_key = key;
@@ -2189,6 +2573,7 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
         }
 
         // Strategy 4: Only if still not found, try namespace matching (more conservative)
+        // BUT: Only use this if there's exactly ONE candidate to avoid wrong type matches
         if (!type_info.has_value()) {
             std::vector<std::string> candidates;
             for (const auto& key : all_type_names) {
@@ -2199,10 +2584,12 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
                 }
             }
 
-            // If we have exactly one candidate, use it. If multiple, prefer the first one found
-            if (!candidates.empty()) {
+            // ONLY use if we have exactly ONE unambiguous candidate
+            // If multiple candidates exist, we can't know which is correct
+            if (candidates.size() == 1) {
                 type_info = types_.getType(candidates[0]);
             }
+            // If multiple candidates: don't expand structure with wrong type
         }
     }
 
@@ -2248,15 +2635,16 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
             has_constant_pattern = true;
         }
         // Also check if the type name suggests a parameter structure
-        else if (type_name.find("_t") != std::string::npos ||  // Typedef suffix
-                 type_name.find("Param") != std::string::npos ||  // Contains "Param"
+        else if (type_name.find("_t") != std::string::npos ||      // Typedef suffix
+                 type_name.find("Param") != std::string::npos ||   // Contains "Param"
                  type_name.find("Config") != std::string::npos) {  // Contains "Config"
             has_constant_pattern = true;
         }
 
         if (has_constant_pattern) {
             // Try to extract actual member names from existing DWARF type information
-            std::vector<std::pair<std::string, uint32_t>> actual_members = getActualMemberNames(type_name);
+            std::vector<std::pair<std::string, uint32_t>> actual_members =
+                getActualMemberNames(type_name);
 
             if (!actual_members.empty()) {
                 // Use actual member names found in DWARF type information
@@ -2276,9 +2664,9 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
 
                         std::string full_member_name = base_name + "." + member_name;
                         MemberInfo param_member(string_interner_.intern(full_member_name),
-                                              member_address,
-                                              string_interner_.intern("float"),
-                                              4);
+                                                member_address,
+                                                string_interner_.intern("float"),
+                                                4);
 
                         // Format the float value
                         std::stringstream ss;
@@ -2369,6 +2757,14 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
                                        member_address,
                                        string_interner_.intern(member.type),
                                        correct_size);
+
+                // Read constant value from memory if in constants mode and address is valid
+                if (config_.constantsOnly && member_address != 0) {
+                    member_info.constant_value =
+                        readConstantValueFromMemory(member_address, member.type, correct_size);
+                    member_info.is_constant = !member_info.constant_value.empty();
+                }
+
                 if (config_.showSections) {
                     member_info.section_name = getSectionNameForAddress(member_address);
                 }
@@ -2378,6 +2774,14 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
                                        member_address,
                                        string_interner_.intern(member.type),
                                        member.size);
+
+                // Read constant value from memory if in constants mode and address is valid
+                if (config_.constantsOnly && member_address != 0) {
+                    member_info.constant_value =
+                        readConstantValueFromMemory(member_address, member.type, member.size);
+                    member_info.is_constant = !member_info.constant_value.empty();
+                }
+
                 if (config_.showSections) {
                     member_info.section_name = getSectionNameForAddress(member_address);
                 }
@@ -2389,7 +2793,8 @@ std::vector<MemberInfo> ElfReader::expandStructureMembers(const std::string& bas
     return members;
 }
 
-std::vector<std::pair<std::string, uint32_t>> ElfReader::getActualMemberNames(const std::string& type_name) const {
+std::vector<std::pair<std::string, uint32_t>>
+ElfReader::getActualMemberNames(const std::string& type_name) const {
     std::vector<std::pair<std::string, uint32_t>> members;
 
     // Try to find the type in our already parsed type information
@@ -2459,7 +2864,8 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::getActualMemberNames(co
 }
 
 #if HAVE_LIBDWARF
-std::vector<std::pair<std::string, uint32_t>> ElfReader::extractDwarfMembersDirect(const std::string& type_name) const {
+std::vector<std::pair<std::string, uint32_t>>
+ElfReader::extractDwarfMembersDirect(const std::string& type_name) const {
     std::vector<std::pair<std::string, uint32_t>> members;
 
     try {
@@ -2478,14 +2884,15 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::extractDwarfMembersDire
             // Clean up
             DwarfInitializer::cleanup(dbg);
         }
-    } catch (const std::exception&) {
-        // If anything fails, return empty vector
+    } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch)
+        // If anything fails, return empty vector - intentionally swallow exceptions
     }
 
     return members;
 }
 
-std::vector<std::pair<std::string, uint32_t>> ElfReader::extractDwarfMembers(const std::string& type_name) const {
+std::vector<std::pair<std::string, uint32_t>>
+ElfReader::extractDwarfMembers(const std::string& type_name) const {
     std::vector<std::pair<std::string, uint32_t>> members;
 
     try {
@@ -2505,8 +2912,9 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::extractDwarfMembers(con
             // Clean up
             DwarfInitializer::cleanup(dbg);
         }
-    } catch (const std::exception&) {
-        // If anything fails, return empty vector to trigger fallback
+    } catch (const std::exception&) {  // NOLINT(bugprone-empty-catch)
+        // If anything fails, return empty vector to trigger fallback - intentionally swallow
+        // exceptions
     }
 
     return members;
@@ -2517,7 +2925,7 @@ std::string ElfReader::resolveTypedefChain(const std::string& type_name) const {
     // Check if we have type information for this type directly
     auto type_info = types_.getType(type_name);
     if (type_info.has_value() && !type_info->members.empty()) {
-        return type_name; // Already a concrete type with members
+        return type_name;  // Already a concrete type with members
     }
 
     // Look for types with similar names that have members
@@ -2536,17 +2944,20 @@ std::string ElfReader::resolveTypedefChain(const std::string& type_name) const {
                 if (candidate_name.find(type_name) != std::string::npos ||
                     type_name.find(candidate_name) != std::string::npos ||
                     (type_name.length() > 2 && type_name.substr(type_name.length() - 2) == "_t" &&
-                     candidate_name.find(type_name.substr(0, type_name.length() - 2)) != std::string::npos)) {
+                     candidate_name.find(type_name.substr(0, type_name.length() - 2)) !=
+                         std::string::npos)) {
                     return candidate_name;
                 }
             }
         }
     }
 
-    return ""; // No resolution found
+    return "";  // No resolution found
 }
 
-std::vector<std::pair<std::string, uint32_t>> ElfReader::getMembersFromDwarfVariables(const std::string& underlying_type, std::optional<TypeInfo>& type_info) const {
+std::vector<std::pair<std::string, uint32_t>>
+ElfReader::getMembersFromDwarfVariables(const std::string& underlying_type,
+                                        std::optional<TypeInfo>& type_info) const {
     std::vector<std::pair<std::string, uint32_t>> members;
 
     // First try to get members from the types collection
@@ -2565,7 +2976,9 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::getMembersFromDwarfVari
     return members;
 }
 
-std::vector<std::pair<std::string, uint32_t>> ElfReader::extractMembersFromTemplateChain(const std::string& template_type, std::optional<TypeInfo>& type_info) const {
+std::vector<std::pair<std::string, uint32_t>>
+ElfReader::extractMembersFromTemplateChain(const std::string& template_type,
+                                           std::optional<TypeInfo>& type_info) const {
     std::vector<std::pair<std::string, uint32_t>> members;
 
     // Parse template type like "BIST::fpuTest<RegisterTest>"
@@ -2574,7 +2987,8 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::extractMembersFromTempl
 
     if (template_start != std::string::npos && template_end != std::string::npos) {
         // Extract template parameter: "RegisterTest"
-        std::string template_param = template_type.substr(template_start + 1, template_end - template_start - 1);
+        std::string template_param =
+            template_type.substr(template_start + 1, template_end - template_start - 1);
 
         // Look for the template parameter as a concrete type
         auto param_info = types_.getType(template_param);
@@ -2590,12 +3004,10 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::extractMembersFromTempl
 
         // If not found in types, try with "Base" suffix/prefix variations
         if (members.empty()) {
-            std::vector<std::string> variations = {
-                template_param + "Base",
-                "Base" + template_param,
-                template_param + "_t",
-                template_param
-            };
+            std::vector<std::string> variations = {template_param + "Base",
+                                                   "Base" + template_param,
+                                                   template_param + "_t",
+                                                   template_param};
 
             for (const auto& variation : variations) {
                 auto var_info = types_.getType(variation);
@@ -2607,7 +3019,7 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::extractMembersFromTempl
                         }
                     }
                     type_info = var_info;
-                    break; // Found a match
+                    break;  // Found a match
                 }
             }
         }
@@ -2616,7 +3028,9 @@ std::vector<std::pair<std::string, uint32_t>> ElfReader::extractMembersFromTempl
     return members;
 }
 
-bool ElfReader::findDwarfTypeByName(Dwarf_Debug dbg, const std::string& type_name, Dwarf_Die& type_die) const {
+bool ElfReader::findDwarfTypeByName(Dwarf_Debug dbg,
+                                    const std::string& type_name,
+                                    Dwarf_Die& type_die) const {
     Dwarf_Error error = nullptr;
     Dwarf_Unsigned cu_header_length = 0;
     Dwarf_Half version_stamp = 0;
@@ -2628,10 +3042,19 @@ bool ElfReader::findDwarfTypeByName(Dwarf_Debug dbg, const std::string& type_nam
     Dwarf_Bool is_info = true;
 
     // Iterate through all compilation units
-    while (dwarf_next_cu_header_d(dbg, is_info, &cu_header_length, &version_stamp,
-                                  &abbrev_offset, &address_size, &length_size, &extension_size,
-                                  &signature, nullptr, nullptr, nullptr, &error) == DW_DLV_OK) {
-
+    while (dwarf_next_cu_header_d(dbg,
+                                  is_info,
+                                  &cu_header_length,
+                                  &version_stamp,
+                                  &abbrev_offset,
+                                  &address_size,
+                                  &length_size,
+                                  &extension_size,
+                                  &signature,
+                                  nullptr,
+                                  nullptr,
+                                  nullptr,
+                                  &error) == DW_DLV_OK) {
         Dwarf_Die cu_die = nullptr;
         if (dwarf_siblingof_b(dbg, nullptr, is_info, &cu_die, &error) == DW_DLV_OK) {
             // Search for the type in this compilation unit
@@ -2646,7 +3069,10 @@ bool ElfReader::findDwarfTypeByName(Dwarf_Debug dbg, const std::string& type_nam
     return false;
 }
 
-bool ElfReader::searchForTypeInCU(Dwarf_Debug dbg, Dwarf_Die cu_die, const std::string& type_name, Dwarf_Die& type_die) const {
+bool ElfReader::searchForTypeInCU(Dwarf_Debug dbg,
+                                  Dwarf_Die cu_die,
+                                  const std::string& type_name,
+                                  Dwarf_Die& type_die) const {
     Dwarf_Error error = nullptr;
     Dwarf_Die child_die = nullptr;
     Dwarf_Die sibling_die = nullptr;
@@ -2654,10 +3080,10 @@ bool ElfReader::searchForTypeInCU(Dwarf_Debug dbg, Dwarf_Die cu_die, const std::
     // Get first child of the CU
     int result = dwarf_child(cu_die, &child_die, &error);
     if (result == DW_DLV_NO_ENTRY) {
-        return false; // No children
+        return false;  // No children
     }
     if (result != DW_DLV_OK) {
-        return false; // Error
+        return false;  // Error
     }
 
     // Search through all children
@@ -2681,7 +3107,97 @@ bool ElfReader::searchForTypeInCU(Dwarf_Debug dbg, Dwarf_Die cu_die, const std::
     return false;
 }
 
-bool ElfReader::isMatchingTypeDie(Dwarf_Debug dbg, Dwarf_Die die, const std::string& type_name, Dwarf_Die& found_die) const {
+/**
+ * @brief Check if a type name represents a basic/primitive type that should not be expanded
+ *
+ * Basic types include fundamental C/C++ types like int, char, float, bool, etc.
+ * These should never be looked up as structures and expanded.
+ *
+ * @param type_name Type name to check
+ * @return true if this is a basic type, false otherwise
+ */
+bool ElfReader::isBasicType(const std::string& type_name) const {
+    // List of basic C/C++ types that should never be expanded as structures
+    static const std::vector<std::string> basic_types = {// Integer types
+                                                         "char",
+                                                         "signed char",
+                                                         "unsigned char",
+                                                         "short",
+                                                         "short int",
+                                                         "signed short",
+                                                         "signed short int",
+                                                         "unsigned short",
+                                                         "unsigned short int",
+                                                         "short unsigned int",
+                                                         "int",
+                                                         "signed int",
+                                                         "unsigned int",
+                                                         "unsigned",
+                                                         "long",
+                                                         "long int",
+                                                         "signed long",
+                                                         "signed long int",
+                                                         "unsigned long",
+                                                         "unsigned long int",
+                                                         "long unsigned int",
+                                                         "long long",
+                                                         "long long int",
+                                                         "signed long long",
+                                                         "signed long long int",
+                                                         "unsigned long long",
+                                                         "unsigned long long int",
+                                                         "long long unsigned int",
+                                                         // Floating point types
+                                                         "float",
+                                                         "double",
+                                                         "long double",
+                                                         // Boolean type
+                                                         "bool",
+                                                         "_Bool",
+                                                         // Fixed-width integer types
+                                                         "int8_t",
+                                                         "uint8_t",
+                                                         "int16_t",
+                                                         "uint16_t",
+                                                         "int32_t",
+                                                         "uint32_t",
+                                                         "int64_t",
+                                                         "uint64_t",
+                                                         // Other basic types
+                                                         "size_t",
+                                                         "ssize_t",
+                                                         "ptrdiff_t",
+                                                         "void",
+                                                         "wchar_t",
+                                                         "char16_t",
+                                                         "char32_t"};
+
+    // Also check for "const " and "volatile " prefixes
+    std::string clean_type = type_name;
+    if (clean_type.substr(0, 6) == "const ") {
+        clean_type = clean_type.substr(6);
+    }
+    if (clean_type.substr(0, 9) == "volatile ") {
+        clean_type = clean_type.substr(9);
+    }
+    if (clean_type.substr(0, 6) == "const ") {  // Handle "volatile const"
+        clean_type = clean_type.substr(6);
+    }
+
+    // Check if this matches any basic type
+    for (const auto& basic_type : basic_types) {
+        if (clean_type == basic_type) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ElfReader::isMatchingTypeDie(Dwarf_Debug dbg,
+                                  Dwarf_Die die,
+                                  const std::string& type_name,
+                                  Dwarf_Die& found_die) const {
     Dwarf_Error error = nullptr;
 
     // Get the DIE tag
@@ -2711,7 +3227,8 @@ bool ElfReader::isMatchingTypeDie(Dwarf_Debug dbg, Dwarf_Die die, const std::str
                     Dwarf_Off type_offset = 0;
                     if (dwarf_global_formref(type_attr, &type_offset, &error) == DW_DLV_OK) {
                         Dwarf_Die underlying_die = nullptr;
-                        if (dwarf_offdie_b(dbg, type_offset, 1, &underlying_die, &error) == DW_DLV_OK) {
+                        if (dwarf_offdie_b(dbg, type_offset, 1, &underlying_die, &error) ==
+                            DW_DLV_OK) {
                             if (isMatchingTypeDie(dbg, underlying_die, type_name, found_die)) {
                                 dwarf_dealloc_attribute(type_attr);
                                 dwarf_dealloc_die(underlying_die);
@@ -2729,7 +3246,10 @@ bool ElfReader::isMatchingTypeDie(Dwarf_Debug dbg, Dwarf_Die die, const std::str
     return false;
 }
 
-void ElfReader::extractMembersFromDwarfDie(Dwarf_Debug dbg, Dwarf_Die type_die, std::vector<std::pair<std::string, uint32_t>>& members) const {
+void ElfReader::extractMembersFromDwarfDie(
+    Dwarf_Debug dbg,
+    Dwarf_Die type_die,
+    std::vector<std::pair<std::string, uint32_t>>& members) const {
     Dwarf_Error error = nullptr;
     Dwarf_Die child_die = nullptr;
     Dwarf_Die sibling_die = nullptr;
@@ -2737,7 +3257,7 @@ void ElfReader::extractMembersFromDwarfDie(Dwarf_Debug dbg, Dwarf_Die type_die, 
     // Get first child
     int result = dwarf_child(type_die, &child_die, &error);
     if (result != DW_DLV_OK) {
-        return; // No children or error
+        return;  // No children or error
     }
 
     // Process all children
@@ -2751,7 +3271,8 @@ void ElfReader::extractMembersFromDwarfDie(Dwarf_Debug dbg, Dwarf_Die type_die, 
                 Dwarf_Attribute location_attr = nullptr;
                 uint32_t member_offset = 0;
 
-                if (dwarf_attr(child_die, DW_AT_data_member_location, &location_attr, &error) == DW_DLV_OK) {
+                if (dwarf_attr(child_die, DW_AT_data_member_location, &location_attr, &error) ==
+                    DW_DLV_OK) {
                     Dwarf_Unsigned offset_val = 0;
                     if (dwarf_formudata(location_attr, &offset_val, &error) == DW_DLV_OK) {
                         member_offset = static_cast<uint32_t>(offset_val);
@@ -2776,9 +3297,11 @@ void ElfReader::extractMembersFromDwarfDie(Dwarf_Debug dbg, Dwarf_Die type_die, 
         }
     }
 }
-#endif // HAVE_LIBDWARF
+#endif  // HAVE_LIBDWARF
 
-void ElfReader::extractGenericParameters(const std::string& base_name, uint64_t struct_address, std::vector<MemberInfo>& members) const {
+void ElfReader::extractGenericParameters(const std::string& base_name,
+                                         uint64_t struct_address,
+                                         std::vector<MemberInfo>& members) const {
     // Read up to 64 bytes of structure data
     std::string struct_data = readMemoryAtAddress(struct_address, 64);
     if (struct_data.empty() || struct_data.size() < 16) {
@@ -2798,12 +3321,12 @@ void ElfReader::extractGenericParameters(const std::string& base_name, uint64_t 
             std::memcpy(&float_val, &raw_value, 4);
 
             // Use generic parameter names as last resort
-            std::string param_name = getGenericParamName(i/4);
+            std::string param_name = getGenericParamName(i / 4);
             std::string member_name = base_name + "." + param_name;
             MemberInfo param_member(string_interner_.intern(member_name),
-                                  struct_address + i,
-                                  string_interner_.intern("float"),
-                                  4);
+                                    struct_address + i,
+                                    string_interner_.intern("float"),
+                                    4);
 
             // Format the float value
             std::stringstream ss;
@@ -2822,7 +3345,7 @@ void ElfReader::extractGenericParameters(const std::string& base_name, uint64_t 
 
 template<typename T>
 T ElfReader::readValue(size_t offset) const {
-    // Use memory validator for comprehensive bounds checking (Phase 1 safety improvement)
+    // Use memory validator for comprehensive bounds checking
     T value = memory_validator_->readValue<T>(offset, "readValue");
 
     // Handle endianness conversion
@@ -2951,6 +3474,170 @@ void ElfReader::analyzeMemoryRegions() {
     }
 }
 
+std::string ElfReader::readConstantValueFromMemory(uint64_t address,
+                                                   const std::string& type_name,
+                                                   uint64_t size) const {
+    // Universal function to read constant values from ELF memory sections
+    // Works for any type stored in .rodata or other const sections
+
+    if (address == 0 || size == 0) {
+        return "";  // Can't read from address 0 or unknown size
+    }
+
+    // Read the raw bytes from memory
+    std::string raw_data = readMemoryAtAddress(address, size);
+    if (raw_data.empty() || raw_data.size() < size) {
+        return "";  // Failed to read data
+    }
+
+    // Format the value based on type
+    std::ostringstream oss;
+
+    if (type_name == "float" && size == 4) {
+        float value;
+        std::memcpy(&value, raw_data.data(), 4);
+
+        // Validate that the float value is reasonable
+        // Skip NaN, infinity, and values with extreme exponents (likely not actual floats)
+        if (std::isnan(value) || std::isinf(value) || std::abs(value) > 1e20f) {
+            return "";  // Value looks suspicious, probably not a real float
+        }
+
+        oss << std::fixed << std::setprecision(6) << value << "f";
+        return oss.str();
+    } else if (type_name == "double" && size == 8) {
+        double value;
+        std::memcpy(&value, raw_data.data(), 8);
+
+        // Validate that the double value is reasonable
+        if (std::isnan(value) || std::isinf(value) || std::abs(value) > 1e100) {
+            return "";  // Value looks suspicious, probably not a real double
+        }
+
+        oss << std::fixed << std::setprecision(15) << value;
+        return oss.str();
+    } else if (type_name == "int" || type_name == "int32_t" || type_name == "signed int") {
+        if (size == 4) {
+            int32_t value;
+            std::memcpy(&value, raw_data.data(), 4);
+            oss << value;
+            return oss.str();
+        }
+    } else if (type_name == "unsigned int" || type_name == "uint32_t") {
+        if (size == 4) {
+            uint32_t value;
+            std::memcpy(&value, raw_data.data(), 4);
+            oss << value;
+            return oss.str();
+        }
+    } else if (type_name == "short" || type_name == "short int" || type_name == "int16_t") {
+        if (size == 2) {
+            int16_t value;
+            std::memcpy(&value, raw_data.data(), 2);
+            oss << value;
+            return oss.str();
+        }
+    } else if (type_name == "unsigned short" || type_name == "short unsigned int" ||
+               type_name == "uint16_t") {
+        if (size == 2) {
+            uint16_t value;
+            std::memcpy(&value, raw_data.data(), 2);
+            oss << value;
+            return oss.str();
+        }
+    } else if (type_name == "char" || type_name == "signed char" || type_name == "int8_t") {
+        if (size == 1) {
+            int8_t value;
+            std::memcpy(&value, raw_data.data(), 1);
+            oss << static_cast<int>(value);
+            return oss.str();
+        }
+    } else if (type_name == "unsigned char" || type_name == "uint8_t") {
+        if (size == 1) {
+            uint8_t value;
+            std::memcpy(&value, raw_data.data(), 1);
+            oss << static_cast<unsigned int>(value);
+            return oss.str();
+        }
+    } else if (type_name == "long" || type_name == "long int" || type_name == "int64_t") {
+        if (size == 8) {
+            int64_t value;
+            std::memcpy(&value, raw_data.data(), 8);
+            oss << value;
+            return oss.str();
+        } else if (size == 4) {
+            int32_t value;
+            std::memcpy(&value, raw_data.data(), 4);
+            oss << value;
+            return oss.str();
+        }
+    } else if (type_name == "unsigned long" || type_name == "long unsigned int" ||
+               type_name == "uint64_t") {
+        if (size == 8) {
+            uint64_t value;
+            std::memcpy(&value, raw_data.data(), 8);
+            oss << value;
+            return oss.str();
+        } else if (size == 4) {
+            uint32_t value;
+            std::memcpy(&value, raw_data.data(), 4);
+            oss << value;
+            return oss.str();
+        }
+    }
+
+    // Fallback: for unknown typedefs (like frac16_t, frac32_t), try to infer from type name and
+    // size This handles custom integer types universally across any ELF file
+
+    // Special case: type name suggests 16-bit but size might be wrong
+    if (type_name.find("16") != std::string::npos && raw_data.size() >= 2) {
+        // Likely a 16-bit fixed-point type like frac16_t
+        int16_t value;
+        std::memcpy(&value, raw_data.data(), 2);
+        oss << value;
+        return oss.str();
+    }
+
+    // Special case: type name suggests 32-bit
+    if (type_name.find("32") != std::string::npos && raw_data.size() >= 4) {
+        // Likely a 32-bit fixed-point type like frac32_t
+        int32_t value;
+        std::memcpy(&value, raw_data.data(), 4);
+        oss << value;
+        return oss.str();
+    }
+
+    // Generic fallback based on actual data size
+    if (raw_data.size() >= 1 && size == 1) {
+        // 1-byte: treat as signed char
+        int8_t value;
+        std::memcpy(&value, raw_data.data(), 1);
+        oss << static_cast<int>(value);
+        return oss.str();
+    } else if (raw_data.size() >= 2 && size == 2) {
+        // 2-byte: treat as signed short
+        int16_t value;
+        std::memcpy(&value, raw_data.data(), 2);
+        oss << value;
+        return oss.str();
+    } else if (raw_data.size() >= 4 && size == 4) {
+        // 4-byte: treat as signed int
+        int32_t value;
+        std::memcpy(&value, raw_data.data(), 4);
+        oss << value;
+        return oss.str();
+    } else if (raw_data.size() >= 8 && size == 8) {
+        // 8-byte: treat as signed long
+        int64_t value;
+        std::memcpy(&value, raw_data.data(), 8);
+        oss << value;
+        return oss.str();
+    }
+
+    // For unknown types or unsupported sizes, return empty
+    return "";
+}
+
 void ElfReader::analyzeVariablesAndMembers() {
     std::vector<MemberInfo> all_members;
     std::set<std::string> processed_symbols;  // Avoid duplicates
@@ -2963,9 +3650,18 @@ void ElfReader::analyzeVariablesAndMembers() {
             continue;  // Skip non-constants when constants mode is enabled
         }
 
+        // For compile-time constants with address=0, skip address-based deduplication
+        // since multiple constants can legitimately have address=0
+        bool is_addressless_constant = (var_info.is_constant && var_info.address == 0);
+        bool address_not_processed =
+            (processed_addresses.find(var_info.address) == processed_addresses.end());
+
         if (var_info.is_global && (var_info.address != 0 || var_info.is_constant) &&
-            processed_addresses.find(var_info.address) == processed_addresses.end()) {
-            processed_addresses.insert(var_info.address);
+            (is_addressless_constant || address_not_processed)) {
+            // Only track address for variables with actual addresses
+            if (!is_addressless_constant) {
+                processed_addresses.insert(var_info.address);
+            }
             std::string display_name =
                 var_info.demangled_name.empty() ? var_info.name : var_info.demangled_name;
             std::string type_name = var_info.type_name;
@@ -2994,15 +3690,43 @@ void ElfReader::analyzeVariablesAndMembers() {
                 }
             }
 
-            if (!type_name.empty()) {
+            if (!type_name.empty() && !isBasicType(type_name)) {
                 // Try to expand as structure/class for both variables and constants
                 // This allows us to see embedded constant parameters in structures
-                auto members = expandStructureMembers(display_name, type_name, symbol_address);
-                all_members.insert(all_members.end(), members.begin(), members.end());
+                // But skip basic/primitive types that should never be expanded
+                // ALSO: Don't expand structures with address=0 in constants mode - these are
+                // compile-time constants without memory representation
+                bool should_expand = (symbol_address != 0 || !config_.constantsOnly);
+                auto members = should_expand
+                                   ? expandStructureMembers(display_name, type_name, symbol_address)
+                                   : std::vector<MemberInfo>();
+                if (!members.empty()) {
+                    all_members.insert(all_members.end(), members.begin(), members.end());
+                } else {
+                    // Type lookup failed or returned empty - output as simple variable with
+                    // constant info
+                    MemberInfo member_info(string_interner_.intern(display_name),
+                                           symbol_address,
+                                           string_interner_.intern(type_name),
+                                           var_info.is_constant,
+                                           var_info.constant_value);
+                    if (config_.showSections) {
+                        member_info.section_name = getSectionNameForAddress(symbol_address);
+                    }
+                    all_members.push_back(member_info);
+                }
             } else {
                 // For constants or unknown structures, show the variable itself with constant info
                 std::string type_str = var_info.type_name.empty() ? "OBJECT" : var_info.type_name;
                 uint64_t estimated_size = estimateTypeSizeFallback(type_str);
+
+                // If this is a constant with a real address but no value, try to read it from
+                // memory
+                std::string const_value = var_info.constant_value;
+                if (var_info.is_constant && const_value.empty() && symbol_address != 0) {
+                    const_value =
+                        readConstantValueFromMemory(symbol_address, type_str, estimated_size);
+                }
 
                 if (estimated_size > 0) {
                     // Use enhanced constructor with size information
@@ -3011,7 +3735,7 @@ void ElfReader::analyzeVariablesAndMembers() {
                                            string_interner_.intern(type_str),
                                            estimated_size);
                     member_info.is_constant = var_info.is_constant;
-                    member_info.constant_value = var_info.constant_value;
+                    member_info.constant_value = const_value;
                     if (config_.showSections) {
                         member_info.section_name = getSectionNameForAddress(symbol_address);
                     }
@@ -3022,7 +3746,7 @@ void ElfReader::analyzeVariablesAndMembers() {
                                                symbol_address,
                                                string_interner_.intern(type_str),
                                                var_info.is_constant,
-                                               var_info.constant_value);
+                                               const_value);
                     if (config_.showSections) {
                         fallback_member.section_name = getSectionNameForAddress(symbol_address);
                     }
@@ -3043,9 +3767,11 @@ void ElfReader::analyzeVariablesAndMembers() {
     }
 
     // Integrate enhanced symbols from ELF symbol table analysis
-    if (!enhanced_symbols_.empty()) {
+    // Skip in constants mode to preserve DWARF constant values
+    if (!enhanced_symbols_.empty() && !config_.constantsOnly) {
         // Convert enhanced symbols to MemberInfo format and merge with existing results
-        std::vector<MemberInfo> enhanced_members = output_generator_->convertEnhancedSymbols(enhanced_symbols_, config_);
+        std::vector<MemberInfo> enhanced_members =
+            output_generator_->convertEnhancedSymbols(enhanced_symbols_, config_);
 
         // Add enhanced symbols to the all_members list, avoiding duplicates
         std::set<uint64_t> existing_addresses;
@@ -3062,7 +3788,8 @@ void ElfReader::analyzeVariablesAndMembers() {
         }
 
         if (config_.verbosity > 1) {
-            std::cout << "Integrated " << enhanced_members.size() << " enhanced symbols into analysis\n";
+            std::cout << "Integrated " << enhanced_members.size()
+                      << " enhanced symbols into analysis\n";
         }
     }
 
@@ -3072,7 +3799,7 @@ void ElfReader::analyzeVariablesAndMembers() {
     });
 
     if (config_.format == "json") {
-        // Pass symbol tables for function output (Phase 3, Task 3.1)
+        // Pass symbol tables for function output
         output_generator_->generateJsonOutput(
             all_members,
             config_,
@@ -3121,7 +3848,7 @@ void ElfReader::analyzeFunctions() {
         }
     }
 
-    // Output functions in the requested format (Phase 3, Task 3.1)
+    // Output functions in the requested format
     if (!all_functions.empty()) {
         // Lambda to get section name for address
         auto get_section_fn = [this](uint64_t addr) {
@@ -3187,6 +3914,21 @@ void ElfReader::analyzeMemberParameters() {
                   << " chars\n";
         std::cout << "  Cache hit ratio: " << std::fixed << std::setprecision(2) << cache_hit_ratio
                   << "%\n";
+
+        // Report type storage statistics for verification
+        size_t total_types = types_.size();
+        size_t linkage_types = types_.getLinkageNameMapSize();
+        size_t qualified_types = types_.getQualifiedNameMapSize();
+        double linkage_ratio =
+            total_types > 0 ? (static_cast<double>(linkage_types) / total_types * 100.0) : 0.0;
+
+        std::cout << "\nType Storage Statistics:\n";
+        std::cout << "  Total types: " << total_types << "\n";
+        std::cout << "  Types with linkage names: " << linkage_types << " (" << std::fixed
+                  << std::setprecision(1) << linkage_ratio << "%)\n";
+        std::cout << "  Types with qualified names: " << qualified_types << "\n";
+        std::cout << "  C++ types (have linkage): " << linkage_types << "\n";
+        std::cout << "  C structs (no linkage): " << (total_types - linkage_types) << "\n";
     }
 
     // Binary Export Functionality
@@ -3207,9 +3949,7 @@ void ElfReader::analyzeMemberParameters() {
     }
 }
 
-// Output generation methods moved to output/OutputGenerator.cpp (Phase 3, Task 3.1)
-
-
+// Output generation methods moved to output/OutputGenerator.cpp
 
 AdvancedTypeInfo ElfReader::getCachedTypeInfo(const std::string& type_name) const {
     auto it = type_cache_.find(type_name);
@@ -4910,7 +5650,7 @@ std::string ElfReader::getArchitecture() const {
 }
 
 // ========================================================================
-// Phase 2.2: Parallel Processing Implementation
+// Parallel Processing Implementation
 // ========================================================================
 
 void ElfReader::initializeParallelProcessing() {
@@ -4981,7 +5721,7 @@ bool ElfReader::parseDwarfCompilationUnitsParallel(Dwarf_Debug dbg) {
             << "Using sequential processing (parallel CU processing implementation pending)\n";
     }
 
-    // For Phase 2.2, we set up the infrastructure but use sequential processing
+    // We set up the infrastructure but use sequential processing
     // Full parallel implementation requires complex coordination of libdwarf contexts
     return parseDwarfCompilationUnitsSequential(dbg);
 }
@@ -5046,7 +5786,7 @@ bool ElfReader::parseDwarfCompilationUnitsSequential(Dwarf_Debug dbg) {
     return true;
 }
 
-#endif // HAVE_LIBDWARF
+#endif  // HAVE_LIBDWARF
 
 void ElfReader::addEnhancedSymbols(const std::vector<ExtractedSymbol>& enhanced_symbols) {
     enhanced_symbols_ = enhanced_symbols;
@@ -5055,4 +5795,3 @@ void ElfReader::addEnhancedSymbols(const std::vector<ExtractedSymbol>& enhanced_
         std::cout << "Added " << enhanced_symbols_.size() << " enhanced symbols to analysis\n";
     }
 }
-

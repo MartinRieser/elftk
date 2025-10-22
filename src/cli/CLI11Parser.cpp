@@ -82,11 +82,16 @@ void CLI11Parser::setupApp(CLI::App& app, Config& config) {
         [&config](bool flag) { config.format = flag ? "json" : "csv"; },
         "Output in JSON format (default: CSV)");
     app.add_flag(
-        "--verbose", [&config](bool) { config.verbosity = 1; }, "Show detailed information");
+           "--verbose",
+           [&config](int64_t count) { config.verbosity = static_cast<int>(count); },
+           "Show detailed information (use twice for more detail)")
+        ->multi_option_policy(CLI::MultiOptionPolicy::Sum);
     app.add_flag("--show-sections", config.showSections, "Include section names in output");
 
     // Array expansion control
-    app.add_option("--array-limit", config.maxArrayExpansion, "Maximum array elements to expand (default: 10)")
+    app.add_option("--array-limit",
+                   config.maxArrayExpansion,
+                   "Maximum array elements to expand (default: 10)")
         ->check(CLI::PositiveNumber)
         ->default_val(10);
 }

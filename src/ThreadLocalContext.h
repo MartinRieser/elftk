@@ -22,7 +22,7 @@ typedef struct Dwarf_Error_s* Dwarf_Error;
  * @file ThreadLocalContext.h
  * @brief Thread-local storage management for parallel ELF processing
  *
- * This file provides thread-local storage management for Phase 2 multi-threading,
+ * This file provides thread-local storage management for multi-threading,
  * specifically designed to handle libdwarf contexts safely in multi-threaded
  * environments. libdwarf is not thread-safe, so each thread needs its own context.
  *
@@ -34,7 +34,7 @@ typedef struct Dwarf_Error_s* Dwarf_Error;
  * - Performance monitoring per thread
  *
  * @author ELF Symbol Reader Development Team
- * @date 2025 - Phase 2 Multi-threading Implementation
+ * @date 2025
  */
 
 /**

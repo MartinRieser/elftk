@@ -15,7 +15,7 @@
 
 /**
  * @file ThreadSafeContainers.h
- * @brief Thread-safe containers for Phase 2 multi-threading support
+ * @brief Thread-safe containers for multi-threading support
  *
  * This file provides thread-safe versions of key data structures used in
  * ELF analysis, enabling concurrent processing while maintaining data integrity.
@@ -27,7 +27,7 @@
  * - Memory-efficient string handling
  *
  * @author ELF Symbol Reader Development Team
- * @date 2025 - Phase 2 Multi-threading Implementation
+ * @date 2025
  */
 
 /**
@@ -45,7 +45,13 @@
 class ThreadSafeTypeRegistry {
 private:
     mutable std::shared_mutex mutex_;
-    std::unordered_map<std::string, TypeInfo> types_;
+    std::unordered_map<std::string, TypeInfo> types_;  // Legacy: any name → TypeInfo
+
+    // Multi-key storage for unique type identification
+    std::unordered_map<std::string, TypeInfo>
+        linkage_name_map_;  // PRIMARY: mangled name → TypeInfo (UNIQUE!)
+    std::unordered_map<std::string, TypeInfo>
+        qualified_name_map_;  // FALLBACK: qualified name → TypeInfo
 
     // Statistics for performance monitoring
     mutable std::atomic<uint64_t> read_count_{0};
@@ -85,14 +91,32 @@ public:
     /**
      * @brief Add or update type information (thread-safe write)
      *
-     * @param name Type name
-     * @param type_info Type information to store
+     * Populates all three storage maps for multi-key lookup:
+     * 1. Legacy types_ map (for backward compatibility with simple name lookups)
+     * 2. linkage_name_map_ (PRIMARY - unique mangled C++ names)
+     * 3. qualified_name_map_ (FALLBACK - namespace::TypeName format)
+     *
+     * @param name Type name (simple or qualified)
+     * @param type_info Type information to store (must contain linkage_name and
+     * full_qualified_name)
      */
     void addType(const std::string& name, const TypeInfo& type_info) {
         write_count_.fetch_add(1, std::memory_order_relaxed);
 
         std::unique_lock<std::shared_mutex> lock(mutex_);
+
+        // Legacy storage (backward compatibility)
         types_[name] = type_info;
+
+        // Store by linkage name (PRIMARY - most reliable)
+        if (!type_info.linkage_name.empty()) {
+            linkage_name_map_[type_info.linkage_name] = type_info;
+        }
+
+        // Store by qualified name (FALLBACK for C structs)
+        if (!type_info.full_qualified_name.empty()) {
+            qualified_name_map_[type_info.full_qualified_name] = type_info;
+        }
     }
 
     /**
@@ -126,6 +150,134 @@ public:
     }
 
     /**
+     * @brief Get the number of types with linkage names (thread-safe read)
+     *
+     * Verification method to confirm linkage name storage
+     *
+     * @return Number of types stored with linkage names (C++ types)
+     */
+    size_t getLinkageNameMapSize() const {
+        read_count_.fetch_add(1, std::memory_order_relaxed);
+
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return linkage_name_map_.size();
+    }
+
+    /**
+     * @brief Get the number of types with qualified names (thread-safe read)
+     *
+     * Verification method to confirm qualified name storage
+     *
+     * @return Number of types stored with qualified names (all types)
+     */
+    size_t getQualifiedNameMapSize() const {
+        read_count_.fetch_add(1, std::memory_order_relaxed);
+
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return qualified_name_map_.size();
+    }
+
+    /**
+     * @brief Get type information by linkage name (thread-safe read)
+     *
+     * Primary lookup method using unique mangled C++ names.
+     * This is the most reliable way to identify types without ambiguity.
+     *
+     * @param linkage_name Mangled C++ linkage name (e.g., "N9Namespace8TypeNameE")
+     * @return Optional TypeInfo if found, empty optional if not found
+     */
+    std::optional<TypeInfo> getTypeByLinkageName(const std::string& linkage_name) const {
+        read_count_.fetch_add(1, std::memory_order_relaxed);
+
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = linkage_name_map_.find(linkage_name);
+        if (it != linkage_name_map_.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Get type information by qualified name (thread-safe read)
+     *
+     * Fallback lookup method using namespace::TypeName format.
+     * Less reliable than linkage names due to potential ambiguity.
+     *
+     * @param qualified_name Fully qualified type name (e.g., "Namespace::TypeName")
+     * @return Optional TypeInfo if found, empty optional if not found
+     */
+    std::optional<TypeInfo> getTypeByQualifiedName(const std::string& qualified_name) const {
+        read_count_.fetch_add(1, std::memory_order_relaxed);
+
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = qualified_name_map_.find(qualified_name);
+        if (it != qualified_name_map_.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Check if a type exists by linkage name (thread-safe read)
+     *
+     * @param linkage_name Mangled C++ linkage name to check
+     * @return true if type exists, false otherwise
+     */
+    bool hasTypeByLinkageName(const std::string& linkage_name) const {
+        read_count_.fetch_add(1, std::memory_order_relaxed);
+
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        return linkage_name_map_.find(linkage_name) != linkage_name_map_.end();
+    }
+
+    /**
+     * @brief Count how many types match a simple name (thread-safe read)
+     *
+     * Used for confidence scoring - if multiple types have same
+     * simple name, it's ambiguous and we shouldn't use it for constants mode.
+     *
+     * @param simple_name Simple type name to search for (e.g., "MyType")
+     * @return Number of types that match (0 = not found, 1 = unique, >1 = ambiguous)
+     *
+     * ## Example:
+     * ```cpp
+     * size_t count = types_.countSimpleNameMatches("MyType");
+     * if (count > 1) {
+     *     // AMBIGUOUS! Multiple types named "MyType"
+     *     // Don't expand in constants mode
+     * }
+     * ```
+     */
+    size_t countSimpleNameMatches(const std::string& simple_name) const {
+        read_count_.fetch_add(1, std::memory_order_relaxed);
+
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        size_t count = 0;
+
+        // Count matches in legacy types_ map (checks simple names and keys with @offset)
+        for (const auto& [key, _] : types_) {
+            // Extract simple name from key (might be "MyType" or "MyType@0x123")
+            std::string key_simple_name = key;
+            size_t at_pos = key.find('@');
+            if (at_pos != std::string::npos) {
+                key_simple_name = key.substr(0, at_pos);
+            }
+
+            // Also check if qualified name ends with ::simple_name
+            size_t colon_pos = key.rfind("::");
+            if (colon_pos != std::string::npos) {
+                key_simple_name = key.substr(colon_pos + 2);
+            }
+
+            if (key_simple_name == simple_name) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /**
      * @brief Clear all types (thread-safe write)
      */
     void clear() {
@@ -133,6 +285,8 @@ public:
 
         std::unique_lock<std::shared_mutex> lock(mutex_);
         types_.clear();
+        linkage_name_map_.clear();
+        qualified_name_map_.clear();
     }
 
     /**

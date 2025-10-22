@@ -1,15 +1,15 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
+
 /**
  * @file ElfExceptions.h
  * @brief Custom exception hierarchy for ELF parsing errors
- * 
+ *
  * This file provides a hierarchical exception system for better error handling
  * and debugging in the ELF Symbol Reader. Each exception type provides specific
  * context and suggestions for resolving common issues.
- * 
+ *
  * Exception Hierarchy:
  * - ElfParsingError (base)
  *   - ElfFileError (file access and validation)
@@ -35,7 +35,7 @@
  *     std::cerr << "General ELF error: " << e.getDetailedMessage() << std::endl;
  * }
  * @endcode
- * 
+ *
  * @author ELF Symbol Reader Team
  * @date 2025
  */
@@ -43,16 +43,16 @@
 #ifndef ELF_EXCEPTIONS_H
 #define ELF_EXCEPTIONS_H
 
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <sstream>
-#include <iomanip>
 
 namespace ElfReaderExceptions {
 
 /**
  * @brief Base exception class for all ELF parsing related errors
- * 
+ *
  * This is the root of the exception hierarchy. All ELF-related errors
  * inherit from this class, allowing for catch-all exception handling
  * while maintaining specific error type information.
@@ -93,13 +93,15 @@ public:
      * @brief Move assignment operator
      */
     ElfParsingError& operator=(ElfParsingError&&) noexcept = default;
-    
+
     /**
      * @brief Get additional context information
      * @return Context string (may be empty)
      */
-    const std::string& getContext() const noexcept { return context_; }
-    
+    const std::string& getContext() const noexcept {
+        return context_;
+    }
+
     /**
      * @brief Get formatted error message with context
      * @return Complete error description including context
@@ -117,20 +119,20 @@ protected:
 
 /**
  * @brief File access and validation errors
- * 
+ *
  * Thrown when there are issues opening, reading, or validating ELF files.
  * Common causes include file permissions, corrupted files, or non-ELF binaries.
  */
 class ElfFileError : public ElfParsingError {
 public:
     enum class ErrorType {
-        FileNotFound,    ///< File does not exist
-        PermissionDenied,///< Cannot read file due to permissions
-        FileTooSmall,    ///< File smaller than minimum ELF size
-        InvalidFormat,   ///< File is not a valid ELF format
-        ReadError       ///< I/O error during file reading
+        FileNotFound,      ///< File does not exist
+        PermissionDenied,  ///< Cannot read file due to permissions
+        FileTooSmall,      ///< File smaller than minimum ELF size
+        InvalidFormat,     ///< File is not a valid ELF format
+        ReadError          ///< I/O error during file reading
     };
-    
+
     /**
      * @brief Construct file error with type and message
      * @param type Specific type of file error
@@ -139,13 +141,15 @@ public:
      */
     ElfFileError(ErrorType type, const std::string& message, const std::string& filename = "")
         : ElfParsingError(message, filename), errorType_(type) {}
-    
+
     /**
      * @brief Get the specific file error type
      * @return Error type enumeration
      */
-    ErrorType getErrorType() const noexcept { return errorType_; }
-    
+    ErrorType getErrorType() const noexcept {
+        return errorType_;
+    }
+
     /**
      * @brief Get user-friendly suggestion for resolving the error
      * @return Suggestion string for fixing the issue
@@ -166,7 +170,7 @@ public:
                 return "Contact support with the error details";
         }
     }
-    
+
     std::string getDetailedMessage() const override {
         std::string msg = ElfParsingError::getDetailedMessage();
         return msg + "\nSuggestion: " + getSuggestion();
@@ -178,8 +182,7 @@ public:
      * @return ElfFileError configured for file not found
      */
     static ElfFileError fileNotFound(const std::string& filename) {
-        return ElfFileError(ErrorType::FileNotFound,
-                           "File not found: " + filename, filename);
+        return ElfFileError(ErrorType::FileNotFound, "File not found: " + filename, filename);
     }
 
     /**
@@ -188,8 +191,8 @@ public:
      * @return ElfFileError configured for permission denied
      */
     static ElfFileError permissionDenied(const std::string& filename) {
-        return ElfFileError(ErrorType::PermissionDenied,
-                           "Permission denied: " + filename, filename);
+        return ElfFileError(
+            ErrorType::PermissionDenied, "Permission denied: " + filename, filename);
     }
 
     /**
@@ -198,8 +201,7 @@ public:
      * @return ElfFileError configured for invalid format
      */
     static ElfFileError invalidFormat(const std::string& filename) {
-        return ElfFileError(ErrorType::InvalidFormat,
-                           "Invalid ELF format: " + filename, filename);
+        return ElfFileError(ErrorType::InvalidFormat, "Invalid ELF format: " + filename, filename);
     }
 
 private:
@@ -208,7 +210,7 @@ private:
 
 /**
  * @brief DWARF debug information parsing errors
- * 
+ *
  * Thrown when there are issues processing DWARF debug information.
  * This includes libdwarf API errors, malformed DWARF data, or missing debug sections.
  */
@@ -221,11 +223,12 @@ public:
      */
     explicit DwarfParsingError(const std::string& message, const std::string& dwarfSection = "")
         : ElfParsingError(message, dwarfSection) {}
-    
+
     std::string getDetailedMessage() const override {
         std::string msg = ElfParsingError::getDetailedMessage();
         if (context_.empty()) {
-            return msg + "\nSuggestion: Ensure the binary was compiled with debug information (-g flag)";
+            return msg +
+                   "\nSuggestion: Ensure the binary was compiled with debug information (-g flag)";
         }
         return msg + "\nSuggestion: Check DWARF section '" + context_ + "' for corruption";
     }
@@ -233,7 +236,7 @@ public:
 
 /**
  * @brief Symbol table processing errors
- * 
+ *
  * Thrown when there are issues processing symbol tables, resolving symbols,
  * or handling symbol name lookups.
  */
@@ -246,11 +249,11 @@ public:
      */
     explicit SymbolResolutionError(const std::string& message, const std::string& symbolName = "")
         : ElfParsingError(message, symbolName) {}
-    
+
     std::string getDetailedMessage() const override {
         std::string msg = ElfParsingError::getDetailedMessage();
         if (!context_.empty()) {
-            return msg + "\nFailed while processing symbol: " + context_ + 
+            return msg + "\nFailed while processing symbol: " + context_ +
                    "\nSuggestion: Check symbol table integrity and string table references";
         }
         return msg + "\nSuggestion: Check symbol table integrity and string table references";
@@ -258,7 +261,7 @@ public:
 };
 
 /**
- * @brief Type resolution errors (Phase 3, Task 3.2)
+ * @brief Type resolution errors
  *
  * Thrown when DWARF type resolution fails or encounters unresolvable types.
  * This includes missing type information, circular type references, or
@@ -278,14 +281,16 @@ public:
         std::string msg = ElfParsingError::getDetailedMessage();
         if (!context_.empty()) {
             return msg + "\nFailed to resolve type: " + context_ +
-                   "\nSuggestion: Ensure binary has complete debug information and type definitions";
+                   "\nSuggestion: Ensure binary has complete debug information and type "
+                   "definitions";
         }
-        return msg + "\nSuggestion: Ensure binary has complete debug information and type definitions";
+        return msg +
+               "\nSuggestion: Ensure binary has complete debug information and type definitions";
     }
 };
 
 /**
- * @brief Symbol not found errors (Phase 3, Task 3.2)
+ * @brief Symbol not found errors
  *
  * Thrown when a requested symbol cannot be found in the symbol table.
  * This is used for explicit symbol lookups where the symbol is expected to exist.
@@ -300,8 +305,8 @@ public:
         : SymbolResolutionError("Symbol not found: " + symbolName, symbolName) {}
 
     std::string getDetailedMessage() const override {
-        return std::string(what()) +
-               "\nSuggestion: Verify symbol name spelling and that symbol is not stripped from binary";
+        return std::string(what()) + "\nSuggestion: Verify symbol name spelling and that symbol is "
+                                     "not stripped from binary";
     }
 };
 
@@ -320,13 +325,15 @@ public:
      */
     explicit MemoryAccessError(const std::string& message, size_t offset = 0)
         : ElfParsingError(message), offset_(offset) {}
-    
+
     /**
      * @brief Get the problematic memory offset
      * @return Offset where the error occurred (0 if not specified)
      */
-    size_t getOffset() const noexcept { return offset_; }
-    
+    size_t getOffset() const noexcept {
+        return offset_;
+    }
+
     std::string getDetailedMessage() const override {
         std::string msg = what();
         if (offset_ > 0) {
@@ -341,6 +348,6 @@ private:
     size_t offset_;  ///< Memory offset where error occurred
 };
 
-} // namespace ElfReaderExceptions
+}  // namespace ElfReaderExceptions
 
-#endif // ELF_EXCEPTIONS_H
+#endif  // ELF_EXCEPTIONS_H

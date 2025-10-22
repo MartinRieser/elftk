@@ -569,6 +569,7 @@ struct DwarfDIE {
     uint32_t getType(uint32_t attr_code = 0x49) const;                // DW_AT_type
     uint32_t getDataMemberLocation(uint32_t attr_code = 0x38) const;  // DW_AT_data_member_location
     bool hasAttribute(uint32_t attr_code) const;
+    bool isValid() const;
 };
 
 // Method implementations for HAVE_LIBDWARF case
@@ -594,6 +595,10 @@ inline uint32_t DwarfDIE::getDataMemberLocation(uint32_t attr_code) const {
 
 inline bool DwarfDIE::hasAttribute(uint32_t attr_code) const {
     return attributes.find(attr_code) != attributes.end();
+}
+
+inline bool DwarfDIE::isValid() const {
+    return tag != 0 && abbrev_code != 0;
 }
 
 #endif  // HAVE_LIBDWARF
@@ -924,13 +929,20 @@ struct TypeInfo {
     std::vector<TypeMember> members;  ///< All members with offsets and types
     uint64_t dwarf_offset;            ///< Unique DWARF DIE offset for identification
     std::string full_qualified_name;  ///< Full name (e.g., "MyNamespace::SensorData")
+    std::string linkage_name;  ///< C++ mangled name (e.g., "N10LdqMeasure10paraInit_tE") - UNIQUE
+                               ///< identifier
 
     TypeInfo() : size(0), dwarf_offset(0) {}
     TypeInfo(uint32_t s,
              std::vector<TypeMember> m,
              uint64_t offset = 0,
-             const std::string_view fqn = "")
-        : size(s), members(std::move(m)), dwarf_offset(offset), full_qualified_name(fqn) {}
+             const std::string_view fqn = "",
+             const std::string_view linkage = "")
+        : size(s),
+          members(std::move(m)),
+          dwarf_offset(offset),
+          full_qualified_name(fqn),
+          linkage_name(linkage) {}
 
     /**
      * @brief Check if this type has any members

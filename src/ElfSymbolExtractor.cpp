@@ -3,38 +3,38 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ElfSymbolExtractor.h"
+#include <cxxabi.h>
+#include <fcntl.h>
+#include <libelf/gelf.h>
+#include <libelf/libelf.h>
+#include <unistd.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <sstream>
-#include <cxxabi.h>
-#include <libelf.h>
-#include <gelf.h>
-#include <fcntl.h>
-#include <unistd.h>
 
 namespace {
-    // Convert Windows paths to Unix-style paths for MSYS2/MinGW compatibility
-    std::string convertPathForMsys2(const std::string& path) {
-        std::string converted = path;
+// Convert Windows paths to Unix-style paths for MSYS2/MinGW compatibility
+std::string convertPathForMsys2(const std::string& path) {
+    std::string converted = path;
 
-        // Convert backslashes to forward slashes
-        std::replace(converted.begin(), converted.end(), '\\', '/');
+    // Convert backslashes to forward slashes
+    std::replace(converted.begin(), converted.end(), '\\', '/');
 
-        // Handle drive letters - convert C:/path to /c/path
-        if (converted.length() >= 2 && converted[1] == ':') {
-            char drive = std::tolower(converted[0]);
-            converted = "/" + std::string(1, drive) + converted.substr(2);
-        }
-
-        // Handle leading ./ for relative paths - sometimes problematic on Windows
-        if (converted.length() >= 2 && converted.substr(0, 2) == "./") {
-            converted = converted.substr(2);
-        }
-
-        return converted;
+    // Handle drive letters - convert C:/path to /c/path
+    if (converted.length() >= 2 && converted[1] == ':') {
+        char drive = static_cast<char>(std::tolower(static_cast<unsigned char>(converted[0])));
+        converted = "/" + std::string(1, drive) + converted.substr(2);
     }
+
+    // Handle leading ./ for relative paths - sometimes problematic on Windows
+    if (converted.length() >= 2 && converted.substr(0, 2) == "./") {
+        converted = converted.substr(2);
+    }
+
+    return converted;
 }
+}  // namespace
 
 std::vector<ExtractedSymbol> ElfSymbolExtractor::extractSymbols(const std::string& filename) {
     std::vector<ExtractedSymbol> symbols;
@@ -47,9 +47,9 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractSymbols(const std::strin
 
     // Try multiple path approaches for Windows compatibility
     std::vector<std::string> pathAttempts = {
-        filename,                                    // Original path
-        convertPathForMsys2(filename),              // MSYS2 converted path
-        filename.substr(1)                          // Remove leading dot for relative paths
+        filename,                       // Original path
+        convertPathForMsys2(filename),  // MSYS2 converted path
+        filename.substr(1)              // Remove leading dot for relative paths
     };
 
     int fd = -1;
@@ -103,10 +103,10 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractSymbols(const std::strin
                 continue;
             }
 
-            int symbolCount = shdr.sh_size / shdr.sh_entsize;
-            for (int i = 0; i < symbolCount; i++) {
+            size_t symbolCount = shdr.sh_size / shdr.sh_entsize;
+            for (size_t i = 0; i < symbolCount; i++) {
                 GElf_Sym sym;
-                if (!gelf_getsym(data, i, &sym)) {
+                if (!gelf_getsym(data, static_cast<int>(i), &sym)) {
                     continue;
                 }
 
@@ -121,7 +121,8 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractSymbols(const std::strin
                     continue;
                 }
 
-                ExtractedSymbol symbol = parseElfSymbol(&sym, name, ehdr.e_ident[EI_CLASS] == ELFCLASS64);
+                ExtractedSymbol symbol =
+                    parseElfSymbol(&sym, name, ehdr.e_ident[EI_CLASS] == ELFCLASS64);
                 if (!symbol.name.empty() && shouldIncludeSymbol(symbol)) {
                     symbols.push_back(symbol);
                 }
@@ -140,7 +141,8 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractSymbols(const std::strin
     return symbols;
 }
 
-std::vector<ExtractedSymbol> ElfSymbolExtractor::extractSymbolsFallback(const std::string& filename) {
+std::vector<ExtractedSymbol>
+ElfSymbolExtractor::extractSymbolsFallback(const std::string& filename) {
     // Complete fallback - return empty result instead of using external tools
     // This eliminates the "system cannot find the path specified" errors
     (void)filename;  // Suppress unused parameter warning
@@ -426,9 +428,9 @@ std::vector<ElfSection> ElfSymbolExtractor::extractSections(const std::string& f
 
     // Try multiple path approaches for Windows compatibility
     std::vector<std::string> pathAttempts = {
-        filename,                                    // Original path
-        convertPathForMsys2(filename),              // MSYS2 converted path
-        filename.substr(1)                          // Remove leading dot for relative paths
+        filename,                       // Original path
+        convertPathForMsys2(filename),  // MSYS2 converted path
+        filename.substr(1)              // Remove leading dot for relative paths
     };
 
     int fd = -1;
@@ -560,18 +562,18 @@ std::vector<ElfSection> ElfSymbolExtractor::createBasicSections() {
     return sections;
 }
 
-std::vector<ExtractedSymbol> ElfSymbolExtractor::discoverSectionVariables(
-    const std::vector<ElfSection>& sections,
-    const std::vector<ExtractedSymbol>& symbols) {
+std::vector<ExtractedSymbol>
+ElfSymbolExtractor::discoverSectionVariables(const std::vector<ElfSection>& sections,
+                                             const std::vector<ExtractedSymbol>& symbols) {
     (void)sections;  // Suppress unused parameter warning
 
     // For now, just return existing symbols
     return symbols;
 }
 
-std::vector<ExtractedSymbol> ElfSymbolExtractor::detectArrayBounds(
-    const std::vector<ExtractedSymbol>& symbols,
-    const std::vector<ElfSection>& sections) {
+std::vector<ExtractedSymbol>
+ElfSymbolExtractor::detectArrayBounds(const std::vector<ExtractedSymbol>& symbols,
+                                      const std::vector<ElfSection>& sections) {
     (void)sections;  // Suppress unused parameter warning
 
     std::vector<ExtractedSymbol> enhancedSymbols = symbols;
@@ -589,7 +591,8 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::detectArrayBounds(
     return enhancedSymbols;
 }
 
-std::vector<ExtractedSymbol> ElfSymbolExtractor::extractCrossReferenceSymbols(const std::string& filename) {
+std::vector<ExtractedSymbol>
+ElfSymbolExtractor::extractCrossReferenceSymbols(const std::string& filename) {
     std::vector<ExtractedSymbol> xrefSymbols;
 
     // Use libelf for native ELF relocation parsing
@@ -600,9 +603,9 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractCrossReferenceSymbols(co
 
     // Try multiple path approaches for Windows compatibility
     std::vector<std::string> pathAttempts = {
-        filename,                                    // Original path
-        convertPathForMsys2(filename),              // MSYS2 converted path
-        filename.substr(1)                          // Remove leading dot for relative paths
+        filename,                       // Original path
+        convertPathForMsys2(filename),  // MSYS2 converted path
+        filename.substr(1)              // Remove leading dot for relative paths
     };
 
     int fd = -1;
@@ -653,29 +656,31 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractCrossReferenceSymbols(co
                 continue;
             }
 
-            int relocCount = shdr.sh_size / shdr.sh_entsize;
-            for (int i = 0; i < relocCount; i++) {
+            size_t relocCount = shdr.sh_size / shdr.sh_entsize;
+            for (size_t i = 0; i < relocCount; i++) {
                 if (shdr.sh_type == SHT_REL) {
                     GElf_Rel rel;
-                    if (!gelf_getrel(data, i, &rel)) {
+                    if (!gelf_getrel(data, static_cast<int>(i), &rel)) {
                         continue;
                     }
 
                     // Get symbol index from relocation
                     uint32_t symIndex = GELF_R_SYM(rel.r_info);
-                    ExtractedSymbol symbol = parseRelocationSymbol(elf, symIndex, rel.r_offset, &ehdr);
+                    ExtractedSymbol symbol =
+                        parseRelocationSymbol(elf, symIndex, rel.r_offset, &ehdr);
                     if (!symbol.name.empty()) {
                         xrefSymbols.push_back(symbol);
                     }
                 } else {  // SHT_RELA
                     GElf_Rela rela;
-                    if (!gelf_getrela(data, i, &rela)) {
+                    if (!gelf_getrela(data, static_cast<int>(i), &rela)) {
                         continue;
                     }
 
                     // Get symbol index from relocation
                     uint32_t symIndex = GELF_R_SYM(rela.r_info);
-                    ExtractedSymbol symbol = parseRelocationSymbol(elf, symIndex, rela.r_offset, &ehdr);
+                    ExtractedSymbol symbol =
+                        parseRelocationSymbol(elf, symIndex, rela.r_offset, &ehdr);
                     if (!symbol.name.empty()) {
                         xrefSymbols.push_back(symbol);
                     }
@@ -689,7 +694,12 @@ std::vector<ExtractedSymbol> ElfSymbolExtractor::extractCrossReferenceSymbols(co
     return xrefSymbols;
 }
 
-ExtractedSymbol ElfSymbolExtractor::parseRelocationSymbol(Elf* elf, uint32_t symIndex, uint64_t offset, void* ehdr_ptr) {
+// symIndex and offset have distinct types and meanings
+ExtractedSymbol ElfSymbolExtractor::parseRelocationSymbol(
+    Elf* elf,
+    uint32_t symIndex,  // NOLINT(bugprone-easily-swappable-parameters)
+    uint64_t offset,
+    void* ehdr_ptr) {
     (void)ehdr_ptr;  // Suppress unused parameter warning
     ExtractedSymbol symbol;
 
@@ -710,9 +720,9 @@ ExtractedSymbol ElfSymbolExtractor::parseRelocationSymbol(Elf* elf, uint32_t sym
                 continue;
             }
 
-            int symbolCount = shdr.sh_size / shdr.sh_entsize;
-            if (symIndex < static_cast<uint32_t>(symbolCount)) {
-                if (!gelf_getsym(data, symIndex, &sym)) {
+            size_t symbolCount = shdr.sh_size / shdr.sh_entsize;
+            if (symIndex < symbolCount) {
+                if (!gelf_getsym(data, static_cast<int>(symIndex), &sym)) {
                     continue;
                 }
 
@@ -721,8 +731,8 @@ ExtractedSymbol ElfSymbolExtractor::parseRelocationSymbol(Elf* elf, uint32_t sym
                 if (name && strlen(name) > 0) {
                     symbol.name = name;
                     symbol.address = offset;  // Use relocation offset
-                    symbol.size = 0;  // Size not available from relocation
-                    symbol.type = 'R';  // Use 'R' for relocation type
+                    symbol.size = 0;          // Size not available from relocation
+                    symbol.type = 'R';        // Use 'R' for relocation type
                     symbol.section = ".relocation";
                     symbol.elementCount = 0;
 
@@ -762,7 +772,7 @@ ExtractedSymbol ElfSymbolExtractor::parseObjdumpRelocationLine(const std::string
     if (iss >> offsetStr >> typeStr >> nameStr) {
         symbol.address = parseAddress(offsetStr);
         symbol.name = nameStr;
-        symbol.type = 'R';  // Use 'R' for relocation type
+        symbol.type = 'R';          // Use 'R' for relocation type
         symbol.isUndefined = true;  // Relocation symbols are typically undefined
         symbol.demangledName = demangleSymbol(symbol.name);
     }
@@ -791,11 +801,11 @@ std::string ElfSymbolExtractor::demangleSymbol(const std::string& mangledName) {
 
 bool ElfSymbolExtractor::shouldIncludeSymbol(const ExtractedSymbol& symbol) {
     // Skip symbols that start with certain prefixes
-    if (symbol.name.empty()) return false;
+    if (symbol.name.empty())
+        return false;
 
     // Skip compiler-generated symbols
-    if (symbol.name.find("__") == 0 &&
-        symbol.name.find("__builtin") != 0 &&
+    if (symbol.name.find("__") == 0 && symbol.name.find("__builtin") != 0 &&
         symbol.name.find("__PRETTY_FUNCTION__") != 0) {
         return false;
     }
@@ -804,15 +814,19 @@ bool ElfSymbolExtractor::shouldIncludeSymbol(const ExtractedSymbol& symbol) {
 }
 
 uint64_t ElfSymbolExtractor::estimateElementCount(const ExtractedSymbol& symbol,
-                                                 const std::vector<ElfSection>& sections) {
+                                                  const std::vector<ElfSection>& sections) {
     (void)sections;  // Suppress unused parameter warning
 
-    if (symbol.size == 0) return 0;
+    if (symbol.size == 0)
+        return 0;
 
     // Simple estimation based on common sizes
-    if (symbol.size % 1 == 0 && symbol.size <= 8) return 1;
-    if (symbol.size % 4 == 0) return symbol.size / 4;
-    if (symbol.size % 8 == 0) return symbol.size / 8;
+    if (symbol.size % 1 == 0 && symbol.size <= 8)
+        return 1;
+    if (symbol.size % 4 == 0)
+        return symbol.size / 4;
+    if (symbol.size % 8 == 0)
+        return symbol.size / 8;
 
     return 1;  // Default to single element
 }
