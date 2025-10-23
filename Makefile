@@ -68,6 +68,11 @@ BUILD_DATE := $(shell date '+%Y-%m-%d')
 BUILD_TIME := $(shell date '+%H:%M:%S')
 CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -g -DBUILD_DATE='"$(BUILD_DATE)"' -DBUILD_TIME='"$(BUILD_TIME)"' -DHAVE_LIBDWARF=1
 
+# Windows-specific: Define HAVE_LIBELF for libelf header includes
+ifneq (,$(findstring MINGW,$(UNAME_S)))
+    CXXFLAGS += -DHAVE_LIBELF=1
+endif
+
 # Windows-specific compiler flags to avoid temp directory permission issues
 ifneq (,$(findstring MINGW,$(UNAME_S)))
     CXXFLAGS += -pipe
