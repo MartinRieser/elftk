@@ -1,0 +1,40 @@
+FROM ubuntu:22.04
+
+# Install build dependencies and development tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libdwarf-dev \
+    libelf-dev \
+    pkg-config \
+    gdb \
+    valgrind \
+    clang \
+    clang-tidy \
+    cmake \
+    make \
+    git \
+    vim \
+    curl \
+    wget \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install VS Code Server prerequisites
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create development user (optional but recommended)
+RUN useradd -m -s /bin/bash devuser && \
+    echo "devuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Set working directory
+WORKDIR /workspace
+
+# Expose port for VS Code Server
+EXPOSE 8000
+
+# Default command
+CMD ["/bin/bash"]

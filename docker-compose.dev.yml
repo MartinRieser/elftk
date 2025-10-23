@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  elftk-dev:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile.dev
+    container_name: elftk-dev-container
+    volumes:
+      - .:/workspace
+      - elftk-build:/workspace/build
+      - elftk-ssh:/home/devuser/.ssh
+    ports:
+      - "8000:8000"
+    environment:
+      - BUILD_DATE=${BUILD_DATE:-$(date +%Y-%m-%d)}
+      - BUILD_TIME=${BUILD_TIME:-$(date +%H:%M:%S)}
+    working_dir: /workspace
+    command: /bin/bash
+    stdin_open: true
+    tty: true
+
+volumes:
+  elftk-build:
+  elftk-ssh:

@@ -1,0 +1,58 @@
+{
+    "name": "ELF Toolkit Development",
+    "dockerFile": "../.docker/Dockerfile.dev",
+    "context": "..",
+    
+    // Mount the current workspace
+    "workspaceFolder": "/workspace",
+    
+    // VS Code extensions to install in the container
+    "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.makefile-tools",
+        "ms-python.python",
+        "ms-vscode.hexeditor",
+        "vadimcn.vscode-lldb",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        "ms-vscode.test-adapter-converter",
+        "ms-vscode.cpptools"
+    ],
+    
+    // Settings for the container
+    "settings": {
+        "C_Cpp.default.configurationProvider": "ms-vscode.makefile-tools",
+        "C_Cpp.default.cppStandard": "c++17",
+        "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
+        "files.associations": {
+            "Makefile": "makefile",
+            "*.h": "cpp",
+            "*.hpp": "cpp"
+        },
+        "C_Cpp.autocomplete": "Default",
+        "C_Cpp.errorSquiggles": "Enabled",
+        "terminal.integrated.shell.linux": "/bin/bash"
+    },
+    
+    // Forward ports for debugging
+    "forwardPorts": [8000],
+    
+    // Post-creation commands
+    "postCreateCommand": "make clean && make",
+    
+    // User configuration
+    "remoteUser": "devuser",
+    
+    // Mount points for persistent data
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/workspace,type=bind"
+    ],
+    
+    // Environment variables
+    "remoteEnv": {
+        "BUILD_DATE": "\"$(date +%Y-%m-%d)\"",
+        "BUILD_TIME": "\"$(date +%H:%M:%S)\""
+    }
+}
