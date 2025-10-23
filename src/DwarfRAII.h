@@ -24,14 +24,26 @@
 #include <libdwarf.h>
 #include <utility>
 
-// Compatibility macro for libdwarf API naming differences
-// Older versions (macOS/Homebrew): dwarf_dealloc_loc_head_c
-// Newer versions (Linux): dwarf_loc_head_c_dealloc
-#ifndef dwarf_loc_head_c_dealloc
-#define dwarf_loc_head_c_dealloc dwarf_dealloc_loc_head_c
-#endif
-
 namespace DwarfRAII {
+
+// Helper function to deallocate Dwarf_Loc_Head_c in a version-agnostic way
+inline void deallocate_loc_head(Dwarf_Debug dbg, Dwarf_Loc_Head_c loc_head) {
+    if (!loc_head) return;
+
+    // Try modern API first (libdwarf 0.5.0+)
+    #if defined(LIBDWARF_VERSION) && LIBDWARF_VERSION >= 500
+        // Newer versions: standalone deallocation function
+        #ifdef __APPLE__
+            dwarf_dealloc_loc_head_c(loc_head);
+        #else
+            dwarf_loc_head_c_dealloc(loc_head);
+        #endif
+    #else
+        // Fallback for older libdwarf: use generic dwarf_dealloc
+        // This is the safest cross-platform approach for Ubuntu 22.04 and older
+        dwarf_dealloc(dbg, loc_head, DW_DLA_LOC_BLOCK);
+    #endif
+}
 
 /**
  * @brief RAII wrapper for Dwarf_Attribute
@@ -348,9 +360,7 @@ public:
      * @brief Destructor - automatically deallocates the location block
      */
     ~DwarfLocBlock() {
-        if (loc_head_) {
-            dwarf_loc_head_c_dealloc(loc_head_);
-        }
+        deallocate_loc_head(dbg_, loc_head_);
     }
 
     // Delete copy operations to prevent double-free
@@ -366,9 +376,7 @@ public:
     DwarfLocBlock& operator=(DwarfLocBlock&& other) noexcept {
         if (this != &other) {
             // Clean up current resource
-            if (loc_head_) {
-                dwarf_loc_head_c_dealloc(loc_head_);
-            }
+            deallocate_loc_head(dbg_, loc_head_);
             // Transfer ownership
             dbg_ = other.dbg_;
             loc_head_ = other.loc_head_;
@@ -400,9 +408,7 @@ public:
      * @param new_loc New location block to manage
      */
     void reset(Dwarf_Loc_Head_c new_loc = nullptr) {
-        if (loc_head_) {
-            dwarf_loc_head_c_dealloc(loc_head_);
-        }
+        deallocate_loc_head(dbg_, loc_head_);
         loc_head_ = new_loc;
     }
 };
