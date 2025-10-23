@@ -109,16 +109,19 @@ public:
     void operator()() {
         auto start_time = std::chrono::high_resolution_clock::now();
 
+        // Increment active threads and ensure decrement happens on all exit paths
+        metrics_->active_threads.fetch_add(1);
+
         try {
-            metrics_->active_threads.fetch_add(1);
             task_();
             metrics_->tasks_completed.fetch_add(1);
         } catch (...) {
             metrics_->tasks_failed.fetch_add(1);
+            metrics_->active_threads.fetch_sub(1);  // Decrement before re-throwing
             throw;
         }
 
-        // This code runs whether exception was thrown or not
+        // Decrement on normal completion
         metrics_->active_threads.fetch_sub(1);
 
         auto end_time = std::chrono::high_resolution_clock::now();

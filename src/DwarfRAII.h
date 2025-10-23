@@ -341,8 +341,8 @@ public:
      * @brief Destructor - automatically deallocates the location block
      */
     ~DwarfLocBlock() {
-        if (loc_head_ && dbg_) {
-            dwarf_dealloc(dbg_, loc_head_, DW_DLA_LOC_BLOCK);
+        if (loc_head_) {
+            dwarf_loc_head_c_dealloc(loc_head_);
         }
     }
 
@@ -359,8 +359,8 @@ public:
     DwarfLocBlock& operator=(DwarfLocBlock&& other) noexcept {
         if (this != &other) {
             // Clean up current resource
-            if (loc_head_ && dbg_) {
-                dwarf_dealloc(dbg_, loc_head_, DW_DLA_LOC_BLOCK);
+            if (loc_head_) {
+                dwarf_loc_head_c_dealloc(loc_head_);
             }
             // Transfer ownership
             dbg_ = other.dbg_;
@@ -393,8 +393,8 @@ public:
      * @param new_loc New location block to manage
      */
     void reset(Dwarf_Loc_Head_c new_loc = nullptr) {
-        if (loc_head_ && dbg_) {
-            dwarf_dealloc(dbg_, loc_head_, DW_DLA_LOC_BLOCK);
+        if (loc_head_) {
+            dwarf_loc_head_c_dealloc(loc_head_);
         }
         loc_head_ = new_loc;
     }
