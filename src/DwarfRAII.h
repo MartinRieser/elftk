@@ -24,6 +24,13 @@
 #include <libdwarf.h>
 #include <utility>
 
+// Compatibility macro for libdwarf API naming differences
+// Older versions (macOS/Homebrew): dwarf_dealloc_loc_head_c
+// Newer versions (Linux): dwarf_loc_head_c_dealloc
+#ifndef dwarf_loc_head_c_dealloc
+#define dwarf_loc_head_c_dealloc dwarf_dealloc_loc_head_c
+#endif
+
 namespace DwarfRAII {
 
 /**
