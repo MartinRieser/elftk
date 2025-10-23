@@ -40,7 +40,7 @@
 class VersionInfo {
 public:
     /// @brief Application version string
-    static constexpr const char* VERSION = "0.9.4";
+    static constexpr const char* VERSION = "0.9.5";
 
     /// @brief Copyright notice
     static constexpr const char* COPYRIGHT = "Copyright (c) 2025 - Licensed under Mozilla Public License 2.0";
