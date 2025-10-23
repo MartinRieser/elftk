@@ -5,7 +5,17 @@
 #include "ElfSymbolExtractor.h"
 #include <cxxabi.h>
 #include <fcntl.h>
-#ifdef __linux__
+
+#if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
+// Windows: libelf may not be available, try different paths
+#ifdef HAVE_ELFUTILS_HEADERS
+#include <elfutils/libelf.h>
+#include <elfutils/gelf.h>
+#elif defined(HAVE_LIBELF)
+#include <libelf.h>
+#include <gelf.h>
+#endif
+#elif defined(__linux__)
 // Try different include paths for various Linux distributions
 #ifdef HAVE_ELFUTILS_HEADERS
 #include <elfutils/libelf.h>
@@ -14,9 +24,13 @@
 #include <libelf.h>
 #include <gelf.h>
 #endif
-#else
-#include <libelf/gelf.h>
+#elif defined(__APPLE__)
 #include <libelf/libelf.h>
+#include <libelf/gelf.h>
+#else
+// Other platforms - try generic paths
+#include <libelf.h>
+#include <gelf.h>
 #endif
 #include <unistd.h>
 #include <algorithm>

@@ -31,12 +31,12 @@ std::optional<Config> CLI11Parser::parse(int argc, char* argv[]) {
     CLI::App app{"elftk - ELF file tool kit for embedded software development", "elftk"};
     setupApp(app, config);
 
-    try {
+try {
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
         // CLI11 automatically handles help, version, and error messages
         // Return the exit code instead of calling std::exit for thread safety
-        app.exit(e);  // This will print error message and exit status
+        app.exit(e);  // This will print message and exit status
         return std::nullopt;
     }
 

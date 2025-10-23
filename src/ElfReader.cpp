@@ -1130,13 +1130,8 @@ void ElfReader::processDwarfVariable(Dwarf_Debug dbg,
         }
 
         if (loc_head) {
-    // Handle different deallocation functions between libdwarf versions
-    #ifdef dwarf_dealloc_loc_head_c
-            dwarf_dealloc_loc_head_c(loc_head);
-    #else
-            // Fallback for older versions
-            dwarf_dealloc(dbg, loc_head, DW_DLA_LOC_BLOCK);
-    #endif
+            // Use the correct deallocation function for Dwarf_Loc_Head_c
+            dwarf_loc_head_c_dealloc(loc_head);
         }
         dwarf_dealloc(dbg, location_attr, DW_DLA_ATTR);
     }
