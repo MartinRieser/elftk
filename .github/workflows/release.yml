@@ -53,14 +53,16 @@ jobs:
         docker build -f .docker/Dockerfile.deb -t elftk-deb-builder .
         docker run --name temp-deb-builder elftk-deb-builder
         mkdir -p build/dist
-        docker cp temp-deb-builder:/output/elftk_1.0.0_amd64.deb ./build/dist/
+        # Extract version from tag or input, remove 'v' prefix if present
+        VERSION="${{ steps.get_version.outputs.version }}"
+        VERSION_NUM=$(echo "$VERSION" | sed 's/^v//')
+        docker cp temp-deb-builder:/output/elftk_${VERSION_NUM}_amd64.deb ./build/dist/
         docker rm temp-deb-builder
         # Rename with version support
-        VERSION="${{ steps.get_version.outputs.version }}"
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          mv ./build/dist/elftk_1.0.0_amd64.deb ./elftk-linux.deb
+          mv ./build/dist/elftk_${VERSION_NUM}_amd64.deb ./elftk-linux.deb
         else
-          mv ./build/dist/elftk_1.0.0_amd64.deb ./elftk-linux-${VERSION}.deb
+          mv ./build/dist/elftk_${VERSION_NUM}_amd64.deb ./elftk-linux-${VERSION}.deb
         fi
 
     - name: Test Linux build
